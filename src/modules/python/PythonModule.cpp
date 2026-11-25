@@ -178,10 +178,58 @@ void shutdownPython() {
     Py_XDECREF(entry.second);
   }
   Py_CLEAR(g_namespace);
-  // Release before finalizing: Py_FinalizeEx destroys the thread state, and
-  // PyGILState_Release on a dead thread state aborts with
-  // "auto-releasing thread-state, but no thread-state for this thread".
-  PyGILState_Release(gil);
+  // Break the module <-> builtin-function reference cycles BEFORE finalizing.
+  //
+  // A module's namespace holds its builtin functions, and every builtin
+  // function holds a strong reference back to its module (`__self__`). That
+  // cycle is exactly what CPython's docs warn about: "Memory tied up in
+  // circular references between objects is not freed" by Py_FinalizeEx. The
+  // module's dict table, its exec code object and its module state then stay
+  // allocated and AddressSanitizer reports them as leaked.
+  //
+  // Clearing sys.modules drops the interpreter's own roots, and gc.collect()
+  // then reclaims the now-unreachable cycles. Both are best-effort: a failure
+  // here must not prevent the interpreter from being finalized.
+  {
+    PyObject *sys = PyImport_ImportModule("sys");
+    if (sys) {
+      PyObject *mods = PyObject_GetAttrString(sys, "modules");
+      if (mods) {
+        PyDict_Clear(mods);
+        Py_DECREF(mods);
+      } else {
+        PyErr_Clear();
+      }
+      Py_DECREF(sys);
+    } else {
+      PyErr_Clear();
+    }
+    PyObject *gc = PyImport_ImportModule("gc");
+    if (gc) {
+      PyObject *collect = PyObject_GetAttrString(gc, "collect");
+      if (collect) {
+        PyObject *result = PyObject_CallNoArgs(collect);
+        Py_XDECREF(result);
+        if (!result) PyErr_Clear();
+        Py_DECREF(collect);
+      } else {
+        PyErr_Clear();
+      }
+      Py_DECREF(gc);
+    } else {
+      PyErr_Clear();
+    }
+  }
+  // Py_FinalizeEx() must be called with the GIL held: CPython's own
+  // _PyObject_DebugMallocStats() asserts on the thread state and aborts
+  // with "the function must be called with the GIL held". Releasing the GIL
+  // first (as this function used to do) also let the interpreter tear down
+  // while the bridge still held references to it.
+  //
+  // The GIL is deliberately NOT released after the finalization: the
+  // thread state is destroyed by Py_FinalizeEx, and releasing a GIL on a
+  // dead thread state aborts with "auto-releasing thread-state, but no
+  // thread-state for this thread".
   Py_FinalizeEx();
 }
 
@@ -610,7 +658,14 @@ Value pyImport(const VMApi &api, const std::vector<Value> &args) {
     Py_DECREF(module);
     throwPythonError("py.import: listing namespace");
   }
+  // retainHandle() takes its OWN strong reference (Py_INCREF), so the
+  // reference PyImport_ImportModule() returned must be released here.
+  // Leaving it outstanding gave the module one extra reference for the
+  // whole process lifetime: it stayed alive past Py_FinalizeEx together
+  // with its namespace, and its namespace holds the builtin functions that
+  // reference it back.
   const int64_t moduleHandle = retainHandle(module); // keeps the module alive
+  Py_DECREF(module);
   Py_ssize_t n = PyList_Size(keys);
   int materialized = 0;
   for (Py_ssize_t i = 0; i < n && materialized < kMaxMaterialized; ++i) {

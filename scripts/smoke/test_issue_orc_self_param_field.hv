@@ -1,5 +1,4 @@
 // smoke: flags = --tiering
-// smoke: timeout = 120
 // smoke: tier = slow
 // Regression: ORC CALL_METHOD dropped receiver for self-style fn fields on
 // plain objects.

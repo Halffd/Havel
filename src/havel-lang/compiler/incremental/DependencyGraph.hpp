@@ -92,7 +92,17 @@ private:
 
 /// Dependency tracker for a compilation session.
 /// Tracks which modules/functions were compiled and their inputs.
-class DependencyTracker {
+///
+/// Named IncrementalDependencyTracker, NOT DependencyTracker: an unrelated
+/// `havel::compiler::DependencyTracker` (the reactive one in
+/// src/havel-lang/runtime/concurrency/DependencyTracker.hpp) records which
+/// globals a watcher condition touched. Two classes sharing a bare name in
+/// two namespaces make a grep ambiguous, and any TU that ever includes both
+/// headers depends on its qualification order. HavelLauncher.cpp includes
+/// this one transitively and makes dozens of `compiler::` calls, so the
+/// hazard is real, not hypothetical. See
+/// docs/known-issues/dependency-tracker-name-shadowing.md.
+class IncrementalDependencyTracker {
 public:
     struct CompilationUnit {
         std::string name;           // module/function name
@@ -102,7 +112,7 @@ public:
         uint64_t timestamp_ms = 0;  // compilation time
     };
 
-    DependencyTracker() = default;
+    IncrementalDependencyTracker() = default;
 
     /// Record a successful compilation.
     void recordCompilation(const CompilationUnit& unit);
@@ -123,7 +133,7 @@ public:
     std::string serialize() const;
 
     /// Deserialize tracker state.
-    static std::optional<DependencyTracker> deserialize(const std::string& data);
+    static std::optional<IncrementalDependencyTracker> deserialize(const std::string& data);
 
 private:
     std::unordered_map<std::string, CompilationUnit> compilations_;

@@ -4,7 +4,6 @@
 //       and executed inline, with `$var` / `${expr}` resolving to enclosing
 //       Havel variables.
 // Expected: exit 0, no output on success. Cleans up after itself.
-// smoke: timeout = 60
 
 title = "smoke sh"
 w = {title: title, pid: 4242}

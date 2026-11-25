@@ -595,7 +595,12 @@ Value VM::execute(const BytecodeChunk &chunk, const std::string &function_name,
     post_reset_setup_(*this);
   }
   opcode_counts_.fill(0);
-  executed_instructions_ = 0;
+  // executed_instructions_ is NOT reset here: it counts the work against
+  // the VM's instruction budget, which bounds the VM's TOTAL work. A
+  // script that reaches execute() more than once (eval(), a module load,
+  // a re-entrant host call) would otherwise clear the count and let an
+  // unbounded loop escape the budget. setMaxInstructions() starts a fresh
+  // count when a new limit is set.
 
   if (frame_arena_.size() <= frame_count_) {
     frame_arena_.push_back(CallFrame{entry, &chunk, 0, 0, 0, false, {}, {}, 0, {}});
@@ -2242,8 +2247,14 @@ void VM::runDispatchLoop(size_t stop_frame_depth) {
   const bool has_profiling = profiling_enabled_;
   const bool has_tracing = trace_execution_;
 
+  // The instruction limit no longer forces the slow path: the fast path
+  // enforces the limit at its own periodic checkpoint (see
+  // checkFastPathInstructionLimit). Excluding the fast path here changed
+  // scheduling behaviour - the fast path observes a suspension request
+  // every 8192 instructions, the slow path every instruction - and that
+  // difference is load-bearing for the conditional-hotkey yield pump.
   const bool use_fast_path =
-      !debugger_attached_ && !has_profiling && !has_tracing && !has_instruction_limit;
+      !debugger_attached_ && !has_profiling && !has_tracing;
 
   if (g_sleep_trace) {
     // fprintf(stderr, "[SLEEPDBG] runDispatchLoop enter stop=%zu frames=%zu last=%d susp=%d\n",
@@ -2487,6 +2498,10 @@ slow_path:
     }
 
     if (has_instruction_limit) {
+      // Share the budget counter with the fast dispatch path: a script may
+      // run both paths (the fast path redirects to the slow path for
+      // complex opcodes), so each path counting into its own counter would
+      // let the total work reach twice the configured budget.
       executed_instructions_++;
       if (executed_instructions_ > max_instructions_) {
         throw std::runtime_error("VM instruction limit exceeded (" +
@@ -5117,6 +5132,11 @@ void VM::tickScheduler(bool wait_for_sleepers) {
 
   sched->drainDeferredCallbacks(FiberPriority::NORMAL);
   sched->wakeSleepingGoroutines();
+  // Async-host-call completions whose waiter was missing at delivery
+  // time (resumeExternalWithValue unmatched) are stashed by the
+  // scheduler; re-check each tick so a goroutine that parked a moment
+  // later still receives its result instead of sleeping forever.
+  sched->sweepAbandonedExternals();
 
   // bc.tick() semantics: a script explicitly advancing the scheduler
   // expects sleeping goroutines to make progress across ticks (the
@@ -6929,14 +6949,16 @@ Value VM::loadModule(const std::string &path) {
     std::streamsize size = file.tellg();
     file.seekg(0, std::ios::beg);
     ValueSerializer serializer;
-    auto deserialized = serializer.loadChunk(resolved->canonicalPath, 65536);
+    std::string loadFailure;
+    auto deserialized = serializer.loadChunk(resolved->canonicalPath, 65536, &loadFailure);
     if (!deserialized) {
-      // The cached .hvc can't be deserialized (e.g. bytecode format drift
-      // between versions). Drop the stale cache and recompile from source so
+      // The cached .hvc can't be served (e.g. bytecode format drift between
+      // versions, or the entry's embedded identity disagrees with the
+      // source it names). Drop the stale cache and recompile from source so
       // a bad cache never hard-fails the import. The source-compile path
       // writes a fresh cache, so the module self-heals on the next run.
-      ::havel::debug("[BC-CACHE] deserialize failed, recompiling from source: {}",
-                     resolved->canonicalPath);
+      ::havel::debug("[BC-CACHE] deserialize failed ({}), recompiling from source: {}",
+                     loadFailure.empty() ? "unknown" : loadFailure, resolved->canonicalPath);
       std::error_code removeEc;
       std::filesystem::remove(resolved->canonicalPath, removeEc);
       auto reResolved = moduleLoader_.resolve(path, prev_script_dir);
@@ -7316,7 +7338,16 @@ load_from_source:
     // Auto-cache compiled chunk to ~/.cache/havel. Module compiles run the
     // ByteCompiler directly (strict_mode_ defaults false, no optimizer in
     // this path), so the entry is stamped with that exact configuration.
-    autoCacheBytecodeChunk(resolved->canonicalPath, *chunk, false, false);
+    //
+    // The source text is passed explicitly so the entry's embedded identity
+    // (size + sha256) describes the text that was actually COMPILED. Without
+    // it, serializeChunk re-reads the file from disk to compute the identity,
+    // and the two reads are independent: an edit landing between the compile
+    // read and the identity read stamps an entry whose identity matches
+    // neither the compiled text nor the file as it was read, and
+    // deserializeChunk then rejects it forever - the entry can never be
+    // served, so the cache silently stops working for that module.
+    autoCacheBytecodeChunk(resolved->canonicalPath, *chunk, false, false, source);
   }
 
   // Execute the module in a sandboxed globals context

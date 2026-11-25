@@ -135,10 +135,18 @@ Value InputBridge::handleHotkeyRegister(const std::vector<Value> &args, const Ho
   // Register closure as a callback - this pins it as a GC root
   CallbackId callbackId = ctx->vm->registerCallback(args[1]);
 
-  // Create hotkey context object using HotkeyModule
+  // Create hotkey context object using HotkeyModule.
+  //
+  // The last-but-one argument is `grab`: whether this registration WANTS an
+  // OS-level key grab. It used to be hardcoded to true, which meant a '~'
+  // (no-grab) registration reported grab=true and was treated as if it had
+  // asked for the key. The intent comes from the key string itself:
+  // ParsedHotkey::grab defaults to true and is set to false by the '~'
+  // prefix.
+  const bool grabRequested = ::havel::IO::ParseHotkeyString(hotkeyStr).grab;
   auto hotkeyContext = ::havel::stdlib::HotkeyModule::createHotkeyContext(
       vm, hotkeyId, hotkeyStr, hotkeyStr, "", "Hotkey registered via hotkey.register", callbackId,
-      true);
+      grabRequested);
 
   if (hotkeyContext.isObjectId()) {
     // The id was dropped here before: pinExternalRoot returns the only
@@ -169,8 +177,8 @@ Value InputBridge::handleHotkeyRegister(const std::vector<Value> &args, const Ho
         auto *sched = vm->getScheduler();
         if (!sched)
           return;
-        // Coalesce redundant triggers: with Drop policy a wakeHotkey on
-        // an already queued/running fiber is dropped by the scheduler
+        // Coalesce redundant triggers: with Drop policy a wakeHotkey on an
+        // already queued/running fiber is dropped by the scheduler
         // anyway, so skip the lock/queue/record work entirely. Prevents
         // bursty input (wheel storms) from hammering the scheduler.
         if (policy == HotkeyPolicy::Drop && sched->isHotkeyPending(persistentGid))
@@ -181,16 +189,46 @@ Value InputBridge::handleHotkeyRegister(const std::vector<Value> &args, const Ho
         sched->wakeHotkey(g, {}, "os-callback");
         ::havel::stdlib::HotkeyModule::recordTrigger(hotkeyId);
       };
-      ctx->hotkeyManager->AddHotkey(hotkeyStr, [vm, wakeHotkey = std::move(wakeHotkey)]() {
-        auto *sched = vm->getScheduler();
-        if (!sched)
-          return;
-        if (sched->isVMThread()) {
-          wakeHotkey();
-        } else {
-          sched->deferToVM(std::move(wakeHotkey));
+      // Ask for the OS-side registration id. An UNCONDITIONAL hotkey must
+      // hold a real grab exactly like a conditional one: without one it
+      // can never fire on a box where the evdev EventListener is
+      // unavailable (no usable /dev/input/event* devices) and the X11 key
+      // grab is the only delivery path.
+      //
+      // io->AddHotkey (the path behind this overload) only records the
+      // binding; the grab is established here.
+      int osId = 0;
+      ctx->hotkeyManager->AddHotkey(
+          hotkeyStr,
+          [vm, wakeHotkey = std::move(wakeHotkey)]() {
+            auto *sched = vm->getScheduler();
+            if (!sched)
+              return;
+            if (sched->isVMThread()) {
+              wakeHotkey();
+            } else {
+              sched->deferToVM(std::move(wakeHotkey));
+            }
+          },
+          &osId);
+      if (osId > 0) {
+        if (auto *sched = vm->getScheduler()) {
+          if (auto *g = sched->get(persistentGid)) {
+            g->hotkey_os_id = osId;
+          }
         }
-      });
+        // The grab is what makes the key arrive at all on an X11-only box.
+        // A failure here (BadAccess: another X client owns the key) is
+        // logged by IO::GrabHotkey and retried by the periodic pump, so
+        // the hotkey heals once the other client lets go.
+        //
+        // Only grab when the registration asked for it: a '~' prefix means
+        // "do NOT grab this key", and grabbing it anyway would take the
+        // key away from every other application.
+        if (grabRequested) {
+          ctx->hotkeyManager->SetHotkeyGrabById(osId, true);
+        }
+      }
     } else {
       // Fallback: spawn a new goroutine per keypress
       ctx->hotkeyManager->AddHotkey(hotkeyStr, [vm, callbackId, hotkeyContext]() {
@@ -475,9 +513,32 @@ Value InputBridge::handleHotkeyList(const std::vector<Value> &args, const HostCo
   auto resultGuard = vm->makeRoot(Value::makeArrayId(result.id));
 
   auto ids = ::havel::stdlib::HotkeyModule::getAllIds();
+  auto *sched = vm->getScheduler();
   for (const auto &hotkeyId : ids) {
     auto obj = ::havel::stdlib::HotkeyModule::rebuildHotkeyContext(*vm, hotkeyId);
     if (obj.isObjectId()) {
+      // `grab` above is the HotkeyModule CONTEXT flag: what the script
+      // asked for. `osGrabbed` is the REAL window-system grab. They
+      // disagree exactly when the hotkey is dead but still looks armed:
+      // a failed XGrabKey (BadAccess - another X client owns the key, or
+      // holds an active keyboard grab) left the binding looking armed with
+      // no grab on the server.
+      //
+      // Addressed by the IO-side registration id, never the alias: several
+      // `when` branches can register the SAME key string, so an alias
+      // lookup would report a different branch's binding.
+      bool osGrabbed = false;
+      if (ctx->hotkeyManager && sched) {
+        uint32_t gid = ::havel::stdlib::HotkeyModule::getGoroutineId(hotkeyId);
+        if (gid != 0) {
+          if (auto *g = sched->get(gid)) {
+            if (g->hotkey_os_id > 0)
+              osGrabbed = ctx->hotkeyManager->isOsGrabbedById(g->hotkey_os_id);
+          }
+        }
+      }
+      vm->setHostObjectField(ObjectRef{obj.asObjectId(), true}, "osGrabbed",
+                             Value::makeBool(osGrabbed));
       vm->pushHostArrayValue(result, obj);
     }
   }

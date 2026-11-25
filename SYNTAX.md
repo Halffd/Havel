@@ -439,8 +439,12 @@ obj?.method?()                  // null-safe + error-throwing variant
 ```
 f(args)                         // parenthesized call
 f arg                           // paren-free call (single argument)
+f arg1, arg2                    // paren-free call (comma-separated arguments)
 f { body }                      // brace-call sugar (block as first argument)
 ```
+
+A paren-free call nests to the right: `f g x` is `f(g(x))`, and
+`f g x, y` is `f(g(x, y))`.
 
 ### Slice Expression
 
@@ -487,13 +491,16 @@ channel()                       // create a new channel
 ### Shell Commands
 
 ```
-$ (expr)                        // run command without capturing output
-$! (expr)                       // run command and capture output
-$! variable                     // capture into variable
-$! [array]                      // capture into array
+$ command                       // run command without capturing output
+$! command                      // run command and capture output
+$! "command with args"          // command string
+$! [array]                      // command as argv array
+$! (expr)                       // command held by an expression
 ```
 
-`$` runs without capture, `$!` captures output.
+`$` runs without capture, `$!` captures output. A bare identifier names the
+COMMAND to run (`$ firefox` runs firefox); to run a command held in a
+variable, use the parenthesised form (`$! (cmdVar)`).
 
 ### Object Literals
 
@@ -514,7 +521,7 @@ $! [array]                      // capture into array
 ### Set Literals
 
 ```
-:{1, 2, 3}                     // set literal
+{1, 2, 3}                      // set literal
 ```
 
 ### Pipelines
@@ -575,6 +582,12 @@ Inside `dsl { }` blocks (where `inInputContext = true`):
 
 ```
 :500                            // sleep 500ms
+:1s                             // sleep 1 second
+:500ms                          // sleep 500 milliseconds
+:1m                             // sleep 1 minute
+:1h                             // sleep 1 hour
+:1h30m                          // sleep 1 hour 30 minutes
+:30s500ms                       // sleep 30.5 seconds
 "text"                          // send text string
 {Enter}                         // send keystroke
 lmb                             // left mouse button click

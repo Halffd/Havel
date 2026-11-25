@@ -1,0 +1,63 @@
+// test_issue_repl_parenless_and_shell_forms.hv
+// What: the paren-free call forms and the bare-identifier shell form that
+//       the REPL transcript exposed as parse/semantic failures:
+//         - `print mode` (a keyword used as an argument)
+//         - `print replace "a", "b"` (a nested call with a comma list)
+//         - `_v | replace "l", "L"` (a pipeline stage with a comma list)
+//         - `$! pwd` (a bare identifier names the COMMAND to run)
+// Expected: exit 0, no output on success.
+
+// A keyword the language allows as an identifier in expression position
+// (SYNTAX.md, "contextually allowed as identifiers"). `mode` is the mode
+// module, so `print mode` must print the module, not fail to parse. print()
+// returns nil; the point is that the call PARSES and RUNS.
+_printMode = print mode
+if _printMode != nil { print("FAIL: print mode should return nil"); exit(1) }
+
+// A paren-free call with a comma-separated argument list. This used to parse
+// as print(replace("a")) and then choke on the comma with "Expected '='
+// after comma-separated targets" (the multi-assignment path).
+_replaced = print replace "hello", "l", "L"
+if _replaced != nil { print("FAIL: print replace must return nil"); exit(1) }
+
+// The same call as a pipeline stage - the second paren-free call site. It
+// used to fail with the same "Expected '=' after comma-separated targets".
+_val = "hello"
+_out = _val | replace "l", "L"
+if str(_out) != "heLlo" { print("FAIL: pipe replace -> " + str(_out)); exit(1) }
+
+// A paren-free call with a single argument.
+_up = print string.upper "abc"
+if _up != nil { print("FAIL: print string.upper must return nil"); exit(1) }
+
+// `$! <identifier>` names the command to run. The bare identifier used to be
+// compiled as a VARIABLE read, so the script died with "Unresolved
+// identifier 'pwd'" instead of running the command.
+_c = $! pwd
+if !_c.success { print("FAIL: $! pwd did not succeed"); exit(1) }
+if _c.exitCode != 0 { print("FAIL: $! pwd exit=" + str(_c.exitCode)); exit(1) }
+if _c.stdout.trim() == "" { print("FAIL: $! pwd produced no stdout"); exit(1) }
+
+// The explicit string form keeps working.
+_strForm = $! "echo explicit-string"
+if _strForm.stdout.trim() != "explicit-string" {
+    print("FAIL: $! \"string\" stdout -> " + _strForm.stdout)
+    exit(1)
+}
+
+// A command held in a variable is reached through the parenthesised form.
+_cmd = "echo from-variable"
+_varForm = $! (_cmd)
+if _varForm.stdout.trim() != "from-variable" {
+    print("FAIL: $! (var) stdout -> " + _varForm.stdout)
+    exit(1)
+}
+
+// The array form keeps working.
+_arrForm = $! ["echo", "from-array"]
+if _arrForm.stdout.trim() != "from-array" {
+    print("FAIL: $! [array] stdout -> " + _arrForm.stdout)
+    exit(1)
+}
+
+exit(0)

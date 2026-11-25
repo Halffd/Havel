@@ -125,3 +125,5 @@ __pycache__/
 Thumbs.db
 CMakeSettings.json
 .cmake/
+# Agent tooling state (task outputs), not source.
+.pi/

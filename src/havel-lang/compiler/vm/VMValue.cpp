@@ -715,6 +715,40 @@ std::optional<int64_t> VM::parseDuration(const Value &value) const {
         return static_cast<int64_t>(number * 60.0 * 60.0 * 1000.0);
       }
     }
+
+    // Compound durations: "1h30m", "1m30s500ms". The spec documents these
+    // forms (docs/specs/Havel.md, "Combined units"), but the single-unit
+    // regex above rejected them, so sleep("1h30m") failed with "sleep():
+    // invalid duration format" even though the spec lists it. Sum the
+    // unit components; each unit may appear at most once, and the units
+    // must run from the largest to the smallest (h, m, s, ms).
+    static const std::regex compound_regex(
+        R"(^(\d+(?:\.\d+)?h)?(\d+(?:\.\d+)?m)?(\d+(?:\.\d+)?s)?(\d+(?:\.\d+)?ms)?$)");
+    std::smatch parts;
+    if (std::regex_match(duration_str, parts, compound_regex) && parts.size() == 5) {
+      double total_ms = 0.0;
+      bool any = false;
+      const double scales[4] = {60.0 * 60.0 * 1000.0, 60.0 * 1000.0, 1000.0, 1.0};
+      for (size_t i = 1; i <= 4; ++i) {
+        if (!parts[i].matched || parts[i].str().empty()) {
+          continue;
+        }
+        // The unit suffix is part of the captured number; strip it.
+        std::string digits = parts[i].str();
+        while (!digits.empty() && !std::isdigit(static_cast<unsigned char>(digits.back())) &&
+               digits.back() != '.') {
+          digits.pop_back();
+        }
+        if (digits.empty()) {
+          return std::nullopt;
+        }
+        total_ms += std::stod(digits) * scales[i - 1];
+        any = true;
+      }
+      if (any) {
+        return static_cast<int64_t>(total_ms);
+      }
+    }
   }
 
   return std::nullopt;

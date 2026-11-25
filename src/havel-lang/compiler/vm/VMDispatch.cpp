@@ -904,6 +904,8 @@ op_LOAD_CONST:
         }
       }
       profiler_.recordInstructions(8192);
+      if (max_instructions_ > 0)
+        checkFastPathInstructionLimit(counter);
       if (exit_requested_.load())
         return;
       maybeCollectGarbage();
@@ -974,6 +976,8 @@ op_LOAD_VAR:
         }
       }
       profiler_.recordInstructions(8192);
+      if (max_instructions_ > 0)
+        checkFastPathInstructionLimit(counter);
       if (exit_requested_.load())
         return;
       maybeCollectGarbage();
@@ -1025,6 +1029,8 @@ op_STORE_VAR:
         }
       }
       profiler_.recordInstructions(8192);
+      if (max_instructions_ > 0)
+        checkFastPathInstructionLimit(counter);
       if (exit_requested_.load())
         return;
       maybeCollectGarbage();
@@ -1067,6 +1073,8 @@ op_POP:
         }
       }
       profiler_.recordInstructions(8192);
+      if (max_instructions_ > 0)
+        checkFastPathInstructionLimit(counter);
       if (exit_requested_.load())
         return;
       maybeCollectGarbage();
@@ -1104,6 +1112,8 @@ op_PUSH_NULL:
         }
       }
       profiler_.recordInstructions(8192);
+      if (max_instructions_ > 0)
+        checkFastPathInstructionLimit(counter);
       if (exit_requested_.load())
         return;
       maybeCollectGarbage();
@@ -1145,6 +1155,23 @@ op_CALL:
     // Falls through to the full executeInstruction path for anything else
     // (callable objects, bound methods, underflow diagnostics, DYN/SPREAD).
     if (call_arg_count != UINT32_MAX && execSimpleCall(call_arg_count)) {
+      // Fiber-suspending host call on the inline fast path: the callee left a
+      // Pending marker on the stack. Park the goroutine on the pending token
+      // (same discipline as the slow path below) so ASYNC_HOST_COMPLETE can
+      // resume it with the lifted value.
+      //
+      // ORDER IS LOAD-BEARING: park BEFORE the budget check. If the
+      // budget expires between a fiber-suspending host call returning
+      // makePending(token) and this park, the goroutine would be
+      // requeued with the Pending marker as a live stack value — never
+      // parked, never resumed by its completion event. The marker then
+      // leaked into script-visible values (reads threw "Length operator
+      // requires...", interpolation printed null). The slow path below
+      // already had this order; keep both in sync.
+      if (!stack.empty() && stack.back().isPending()) {
+        if (parkIfPendingCallResult())
+          return;
+      }
       // A module-wrapper callee can consume the remaining tick budget inside
       // doCall and unwind with NO result pushed (budget_unwind_no_result_): its
       // wrapped frame stays live on the fiber and supplies the result on resume.
@@ -1152,14 +1179,6 @@ op_CALL:
       // with the budget already spent.
       if (tickBudgetExhausted())
         return;
-      // Fiber-suspending host call on the inline fast path: the callee left a
-      // Pending marker on the stack. Park the goroutine on the pending token
-      // (same discipline as the slow path below) so ASYNC_HOST_COMPLETE can
-      // resume it with the lifted value.
-      if (!stack.empty() && stack.back().isPending()) {
-        if (parkIfPendingCallResult())
-          return;
-      }
       counter++;
       if ((counter & 8191) == 0) {
         if (fast_tick_budget_ != 0) {
@@ -1169,6 +1188,8 @@ op_CALL:
           }
         }
         profiler_.recordInstructions(8192);
+        if (max_instructions_ > 0)
+          checkFastPathInstructionLimit(counter);
         if (exit_requested_.load())
           return;
         maybeCollectGarbage();
@@ -1283,6 +1304,8 @@ op_CALL:
         }
       }
       profiler_.recordInstructions(8192);
+      if (max_instructions_ > 0)
+        checkFastPathInstructionLimit(counter);
       if (exit_requested_.load())
         return;
       maybeCollectGarbage();
@@ -1335,6 +1358,8 @@ op_RETURN:
         }
       }
       profiler_.recordInstructions(8192);
+      if (max_instructions_ > 0)
+        checkFastPathInstructionLimit(counter);
       if (exit_requested_.load())
         return;
       maybeCollectGarbage();
@@ -1435,6 +1460,8 @@ dispatch_next:
       }
     }
     profiler_.recordInstructions(8192);
+    if (max_instructions_ > 0)
+      checkFastPathInstructionLimit(counter);
     if (exit_requested_.load())
       return;
     maybeCollectGarbage();
@@ -1494,6 +1521,8 @@ op_LOAD_GLOBAL:
         }
       }
       profiler_.recordInstructions(8192);
+      if (max_instructions_ > 0)
+        checkFastPathInstructionLimit(counter);
       if (exit_requested_.load())
         return;
       maybeCollectGarbage();
@@ -1547,6 +1576,8 @@ op_STORE_GLOBAL:
         }
       }
       profiler_.recordInstructions(8192);
+      if (max_instructions_ > 0)
+        checkFastPathInstructionLimit(counter);
       if (exit_requested_.load())
         return;
       maybeCollectGarbage();
@@ -1599,6 +1630,8 @@ op_STORE_IMMUT_GLOBAL:
         }
       }
       profiler_.recordInstructions(8192);
+      if (max_instructions_ > 0)
+        checkFastPathInstructionLimit(counter);
       if (exit_requested_.load())
         return;
       maybeCollectGarbage();
@@ -1646,6 +1679,8 @@ op_STORE_IMMUT_VAR:
         }
       }
       profiler_.recordInstructions(8192);
+      if (max_instructions_ > 0)
+        checkFastPathInstructionLimit(counter);
       if (exit_requested_.load())
         return;
       maybeCollectGarbage();
@@ -1692,6 +1727,8 @@ op_LOAD_UPVALUE:
         }
       }
       profiler_.recordInstructions(8192);
+      if (max_instructions_ > 0)
+        checkFastPathInstructionLimit(counter);
       if (exit_requested_.load())
         return;
       maybeCollectGarbage();
@@ -1738,6 +1775,8 @@ op_STORE_UPVALUE:
         }
       }
       profiler_.recordInstructions(8192);
+      if (max_instructions_ > 0)
+        checkFastPathInstructionLimit(counter);
       if (exit_requested_.load())
         return;
       maybeCollectGarbage();
@@ -1777,6 +1816,8 @@ op_DUP:
         }
       }
       profiler_.recordInstructions(8192);
+      if (max_instructions_ > 0)
+        checkFastPathInstructionLimit(counter);
       if (exit_requested_.load())
         return;
       maybeCollectGarbage();
@@ -1817,6 +1858,8 @@ op_SWAP:
         }
       }
       profiler_.recordInstructions(8192);
+      if (max_instructions_ > 0)
+        checkFastPathInstructionLimit(counter);
       if (exit_requested_.load())
         return;
       maybeCollectGarbage();
@@ -1874,6 +1917,8 @@ op_INCLOCAL:
         }
       }
       profiler_.recordInstructions(8192);
+      if (max_instructions_ > 0)
+        checkFastPathInstructionLimit(counter);
       if (exit_requested_.load())
         return;
       maybeCollectGarbage();
@@ -1931,6 +1976,8 @@ op_DECLOCAL:
         }
       }
       profiler_.recordInstructions(8192);
+      if (max_instructions_ > 0)
+        checkFastPathInstructionLimit(counter);
       if (exit_requested_.load())
         return;
       maybeCollectGarbage();
@@ -1983,6 +2030,8 @@ op_INCLOCAL_POST:
         }
       }
       profiler_.recordInstructions(8192);
+      if (max_instructions_ > 0)
+        checkFastPathInstructionLimit(counter);
       if (exit_requested_.load())
         return;
       maybeCollectGarbage();
@@ -2035,6 +2084,8 @@ op_DECLOCAL_POST:
         }
       }
       profiler_.recordInstructions(8192);
+      if (max_instructions_ > 0)
+        checkFastPathInstructionLimit(counter);
       if (exit_requested_.load())
         return;
       maybeCollectGarbage();
@@ -2098,6 +2149,8 @@ op_BIT_RSH:
         }
       }
       profiler_.recordInstructions(8192);
+      if (max_instructions_ > 0)
+        checkFastPathInstructionLimit(counter);
       if (exit_requested_.load())
         return;
       maybeCollectGarbage();
@@ -2175,6 +2228,8 @@ op_ADD_INT:
             }
           }
           profiler_.recordInstructions(8192);
+          if (max_instructions_ > 0)
+            checkFastPathInstructionLimit(counter);
           if (exit_requested_.load())
             return;
           maybeCollectGarbage();
@@ -2211,6 +2266,8 @@ op_ADD_INT:
         }
       }
       profiler_.recordInstructions(8192);
+      if (max_instructions_ > 0)
+        checkFastPathInstructionLimit(counter);
       if (exit_requested_.load())
         return;
       maybeCollectGarbage();
@@ -2250,6 +2307,8 @@ op_OR:
         }
       }
       profiler_.recordInstructions(8192);
+      if (max_instructions_ > 0)
+        checkFastPathInstructionLimit(counter);
       if (exit_requested_.load())
         return;
       maybeCollectGarbage();
@@ -2288,6 +2347,8 @@ op_NOT:
         }
       }
       profiler_.recordInstructions(8192);
+      if (max_instructions_ > 0)
+        checkFastPathInstructionLimit(counter);
       if (exit_requested_.load())
         return;
       maybeCollectGarbage();
@@ -2331,6 +2392,8 @@ op_BIT_NOT:
         }
       }
       profiler_.recordInstructions(8192);
+      if (max_instructions_ > 0)
+        checkFastPathInstructionLimit(counter);
       if (exit_requested_.load())
         return;
       maybeCollectGarbage();
@@ -2368,6 +2431,8 @@ op_NEGATE:
         }
       }
       profiler_.recordInstructions(8192);
+      if (max_instructions_ > 0)
+        checkFastPathInstructionLimit(counter);
       if (exit_requested_.load())
         return;
       maybeCollectGarbage();
@@ -2490,6 +2555,8 @@ op_STRING_GET_FAST:
           }
         }
         profiler_.recordInstructions(8192);
+        if (max_instructions_ > 0)
+          checkFastPathInstructionLimit(counter);
         if (exit_requested_.load())
           return;
         maybeCollectGarbage();
@@ -2630,6 +2697,8 @@ op_STRING_GET_FAST:
             }
           }
           profiler_.recordInstructions(8192);
+          if (max_instructions_ > 0)
+            checkFastPathInstructionLimit(counter);
           if (exit_requested_.load())
             return;
           maybeCollectGarbage();
@@ -2668,6 +2737,8 @@ op_STRING_GET_FAST:
           }
         }
         profiler_.recordInstructions(8192);
+        if (max_instructions_ > 0)
+          checkFastPathInstructionLimit(counter);
         if (exit_requested_.load())
           return;
         maybeCollectGarbage();
@@ -2711,6 +2782,8 @@ op_STRING_GET_FAST:
           }
         }
         profiler_.recordInstructions(8192);
+        if (max_instructions_ > 0)
+          checkFastPathInstructionLimit(counter);
         if (exit_requested_.load())
           return;
         maybeCollectGarbage();
@@ -2780,6 +2853,8 @@ op_STRING_GET_FAST:
           }
         }
         profiler_.recordInstructions(8192);
+        if (max_instructions_ > 0)
+          checkFastPathInstructionLimit(counter);
         if (exit_requested_.load())
           return;
         maybeCollectGarbage();
@@ -2850,6 +2925,8 @@ op_STRING_GET_FAST:
           }
         }
         profiler_.recordInstructions(8192);
+        if (max_instructions_ > 0)
+          checkFastPathInstructionLimit(counter);
         if (exit_requested_.load())
           return;
         maybeCollectGarbage();
@@ -2919,6 +2996,8 @@ op_STRING_GET_FAST:
           }
         }
         profiler_.recordInstructions(8192);
+        if (max_instructions_ > 0)
+          checkFastPathInstructionLimit(counter);
         if (exit_requested_.load())
           return;
         maybeCollectGarbage();
@@ -2967,6 +3046,8 @@ op_STRING_GET_FAST:
           }
         }
         profiler_.recordInstructions(8192);
+        if (max_instructions_ > 0)
+          checkFastPathInstructionLimit(counter);
         if (exit_requested_.load())
           return;
         maybeCollectGarbage();
@@ -3013,6 +3094,8 @@ op_STRING_GET_FAST:
           }
         }
         profiler_.recordInstructions(8192);
+        if (max_instructions_ > 0)
+          checkFastPathInstructionLimit(counter);
         if (exit_requested_.load())
           return;
         maybeCollectGarbage();
@@ -3093,6 +3176,8 @@ op_STRING_GET_FAST:
           }
         }
         profiler_.recordInstructions(8192);
+        if (max_instructions_ > 0)
+          checkFastPathInstructionLimit(counter);
         if (exit_requested_.load())
           return;
         maybeCollectGarbage();
@@ -3133,6 +3218,8 @@ op_STRING_GET_FAST:
           }
         }
         profiler_.recordInstructions(8192);
+        if (max_instructions_ > 0)
+          checkFastPathInstructionLimit(counter);
         if (exit_requested_.load())
           return;
         maybeCollectGarbage();
@@ -3174,6 +3261,8 @@ op_STRING_GET_FAST:
           }
         }
         profiler_.recordInstructions(8192);
+        if (max_instructions_ > 0)
+          checkFastPathInstructionLimit(counter);
         if (exit_requested_.load())
           return;
         maybeCollectGarbage();
@@ -3216,6 +3305,8 @@ op_STRING_GET_FAST:
           }
         }
         profiler_.recordInstructions(8192);
+        if (max_instructions_ > 0)
+          checkFastPathInstructionLimit(counter);
         if (exit_requested_.load())
           return;
         maybeCollectGarbage();
@@ -3258,6 +3349,8 @@ op_STRING_GET_FAST:
           }
         }
         profiler_.recordInstructions(8192);
+        if (max_instructions_ > 0)
+          checkFastPathInstructionLimit(counter);
         if (exit_requested_.load())
           return;
         maybeCollectGarbage();
@@ -3296,6 +3389,8 @@ op_STRING_GET_FAST:
           }
         }
         profiler_.recordInstructions(8192);
+        if (max_instructions_ > 0)
+          checkFastPathInstructionLimit(counter);
         if (exit_requested_.load())
           return;
         maybeCollectGarbage();
@@ -3342,6 +3437,8 @@ op_STRING_GET_FAST:
           }
         }
         profiler_.recordInstructions(8192);
+        if (max_instructions_ > 0)
+          checkFastPathInstructionLimit(counter);
         if (exit_requested_.load())
           return;
         maybeCollectGarbage();
@@ -3408,7 +3505,7 @@ op_STRING_GET_FAST:
           rethrowHostError(e);
         }
       }
-      if (suspension_requested_ || last_suspension_reason_ != 0 || tickBudgetExhausted())
+      if (suspension_requested_ || last_suspension_reason_ != 0)
         goto slow_dispatch_fallback;
       // exit() may have been called inside executeInstruction (e.g. a
       // CALL_METHOD to process.exit). Stop immediately, mirroring the slow
@@ -3420,8 +3517,15 @@ op_STRING_GET_FAST:
       // Fiber-suspending host call via CALL_METHOD or another complex
       // opcode: executeInstruction pushed a Pending marker; park the
       // goroutine on the pending token (see parkIfPendingCallResult).
+      //
+      // ORDER IS LOAD-BEARING, same as the inline fast path above: park
+      // BEFORE the budget check, or a budget exhaustion here leaves the
+      // Pending as a live stack value on a requeued goroutine (see the
+      // inline-path comment).
       if (parkIfPendingCallResult())
         return;
+      if (tickBudgetExhausted())
+        goto slow_dispatch_fallback;
       counter++;
       if ((counter & 8191) == 0) {
         // Scheduler time-slice: when a tick budget is armed, return at this
@@ -3436,6 +3540,8 @@ op_STRING_GET_FAST:
           }
         }
         profiler_.recordInstructions(8192);
+        if (max_instructions_ > 0)
+          checkFastPathInstructionLimit(counter);
         if (exit_requested_.load())
           return;
         maybeCollectGarbage();

@@ -101,6 +101,10 @@ public:
   ~Timeout();
 
   void cancel();
+  // Authoritative cancellation signal for queued TIMER_FIRE consumers
+  // (mirrors Interval::isRunning): a cancelled timeout's queued event
+  // must not run its body.
+  bool isCancelled() const { return cancelled.load(); }
 
 private:
   void timerLoop();

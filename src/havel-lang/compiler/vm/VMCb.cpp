@@ -766,6 +766,29 @@ void VM::executePendingTimerCallbacks() {
   for (auto &cb : callbacks) {
     if (exit_requested_.load())
       break;
+    // Skip callbacks for intervals stopped after their TIMER_FIRE event
+    // was queued: intervalStop() joins the pusher and releases the pin,
+    // but queued events still fired — up to a whole backlog running
+    // after the script's stop() returned (probe: 7/8/18 post-stop
+    // bodies). The heap Interval survives until GC sweeps it;
+    // isRunning() false = cancelled, the authoritative signal.
+    if (!cb.is_timeout) {
+      ::havel::Interval *interval = heap_.interval(cb.timer_id);
+      if (!interval || !interval->isRunning()) {
+        ::havel::debug("[VM] dropping TIMER_FIRE for stopped/removed "
+                       "interval id={}",
+                       cb.timer_id);
+        continue;
+      }
+    } else {
+      ::havel::Timeout *timeout = heap_.timeout(cb.timer_id);
+      if (!timeout || timeout->isCancelled()) {
+        ::havel::debug("[VM] dropping TIMER_FIRE for cancelled/removed "
+                       "timeout id={}",
+                       cb.timer_id);
+        continue;
+      }
+    }
     try {
       Value result =
           cb.has_callback_id ? invokeCallback(cb.callback_id, {}) : callFunction(cb.closure, {});

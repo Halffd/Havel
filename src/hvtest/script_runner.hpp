@@ -30,7 +30,11 @@ struct ScriptResult {
     bool passed;
     int exit_code;
     double elapsed_ms;
-    bool timed_out;
+    // True when the child was stopped by the VM's instruction budget
+    // (max-instructions) instead of finishing on its own. This is a
+    // work-based bound, not a wall-clock one, so the verdict does not
+    // depend on how loaded the machine was.
+    bool instruction_limited;
     // Tail of the child's captured stdout+stderr; kept to the last
     // 16384 bytes so a failing intermittent run leaves its evidence
     // behind (previously the pipe was read and discarded).
@@ -60,6 +64,20 @@ inline std::vector<std::string> discover_scripts(const std::vector<std::string> 
 	return scripts;
 }
 
+// Default per-test instruction budget. This bounds the WORK a script may
+// do, so it detects a script stuck in an infinite loop without ever
+// misreporting a merely slow machine. The number is deliberately far above
+// what any ordinary test needs (a plain arithmetic test runs ~57k VM
+// instructions; the heaviest smoke test ~1.8M) and far below a runaway
+// loop, which burns tens of millions per second.
+//
+// A script that legitimately needs more work declares it in its header:
+//   // smoke: max-instructions = 200000000
+// Scripts that are long-running BY DESIGN (stress and benchmark runs) are
+// excluded from the auto-collected suite entirely and run only via the
+// explicit opt-in paths.
+constexpr uint64_t kDefaultInstructionBudget = 50'000'000;
+
 inline std::vector<std::string> list_test_dirs(const std::string &scripts_root) {
 	return {
 		scripts_root + "/smoke",
@@ -68,29 +86,83 @@ inline std::vector<std::string> list_test_dirs(const std::string &scripts_root) 
 	};
 }
 
-// Read per-test timeout from file header.
-// Format: // smoke: timeout = <seconds>  (or // test: timeout = <seconds>)
-inline int read_test_timeout(const std::string &script_path) {
+// Directories holding ASSERTION-style tests: each script checks its own
+// result and exits non-zero when the check fails. These are real tests and
+// belong in the auto-collected suite.
+//
+// scripts/tests/unit holds the language unit tests (arithmetic, strings,
+// arrays, closures, classes, ...). They were previously written but never
+// wired into any runner: the directory was referenced nowhere in the build
+// or test infrastructure, so a regression in any of them went unnoticed.
+// Every script there is side-effect free (no fs.write, no process.run, no
+// mouse/keyboard/brightness/window calls), so it is safe to auto-collect.
+//
+// Deliberately NOT included:
+//   scripts/tests/io        - real input injection
+//   scripts/tests/window    - real window manipulation
+//   scripts/tests/events    - real fs watchers / event sources
+//   scripts/tests/mod       - contains a brightness regression test
+//   scripts/tests/stress    - long-running by design (slow tier)
+//   scripts/benchmarks      - long-running by design (slow tier)
+// Those run only through the explicit opt-in paths.
+inline std::vector<std::string> list_assertion_test_dirs(const std::string &scripts_root) {
+	return {
+		scripts_root + "/tests/unit",
+	};
+}
+
+// Directories whose scripts are long-running BY DESIGN: stress runs and
+// benchmarks. They are excluded from the auto-collected suite and run only
+// when explicitly requested, because their runtime dominates everything
+// else and they say nothing about whether the code under test is correct.
+inline std::vector<std::string> list_long_running_dirs(const std::string &scripts_root) {
+	return {
+		scripts_root + "/stress",
+		scripts_root + "/tests/stress",
+		scripts_root + "/benchmarks",
+	};
+}
+
+// Read a per-test instruction budget from the file header.
+// Format: // smoke: max-instructions = <count>
+// 0 means "use the suite default". The budget bounds the WORK a script may
+// do, not the wall-clock time it may take: a script that loops forever is
+// stopped after N VM instructions, while a script that legitimately needs a
+// long wall-clock run (many seconds of sleeping) is unaffected. The verdict
+// therefore does not depend on how loaded the machine was.
+inline uint64_t read_test_instruction_budget(const std::string &script_path) {
 	std::ifstream ifs(script_path);
 	if (!ifs) return 0;
 	std::string line;
 	int count = 0;
 	while (std::getline(ifs, line) && count < 20) {
 		count++;
-		// Look for // smoke: timeout = <n> or // test: timeout = <n>
-		if (line.rfind("// smoke: timeout =", 0) == 0 || line.rfind("// test: timeout =", 0) == 0) {
+		if (line.rfind("// smoke: max-instructions =", 0) == 0 ||
+		    line.rfind("// test: max-instructions =", 0) == 0) {
 			size_t eq = line.find('=');
 			if (eq != std::string::npos) {
 				std::string val = line.substr(eq + 1);
 				val.erase(0, val.find_first_not_of(" \t"));
 				val.erase(val.find_last_not_of(" \t") + 1);
 				try {
-					return std::stoi(val);
+					return static_cast<uint64_t>(std::stoull(val));
 				} catch (...) {}
 			}
+			break;
 		}
 	}
-	return 0; // 0 means use default
+	return 0;
+}
+
+// The budget that applies to one script: its own header override if it
+// declares one, otherwise the suite default. A declared value of 0 is
+// treated as "not declared" and falls back to the default; a script opts
+// out of the budget by being in a suite whose default is 0 (the --long
+// suite), not by declaring 0 here.
+inline uint64_t resolve_instruction_budget(const std::string &script_path,
+                                            uint64_t default_budget) {
+	uint64_t declared = read_test_instruction_budget(script_path);
+	return declared > 0 ? declared : default_budget;
 }
 
 // Read per-test extra runner flags from the file header.
@@ -195,20 +267,14 @@ inline TestTier parse_test_tier(const std::string &script_path) {
 }
 
 inline ScriptResult run_script(const std::string &havel_bin, const std::string &script_path,
-                               int timeout_seconds = 60,
-                               const std::vector<std::string> &pre_flags = {}) {
-    // Check for per-test timeout in file header (e.g., // smoke: timeout = 180)
-    int per_test_timeout = read_test_timeout(script_path);
-    if (per_test_timeout > 0) {
-        timeout_seconds = per_test_timeout;
-    }
-
+                               const std::vector<std::string> &pre_flags = {},
+                               uint64_t instruction_budget = 0) {
     ScriptResult result;
     result.path = script_path;
     result.passed = false;
     result.exit_code = -1;
     result.elapsed_ms = 0;
-    result.timed_out = false;
+    result.instruction_limited = false;
 
     int pipefd[2];
     if (pipe(pipefd) == -1) {
@@ -250,6 +316,15 @@ inline ScriptResult run_script(const std::string &havel_bin, const std::string &
         // or brightness.set() then no-op instead of touching the real
         // desktop (that was the phantom-zoom vector in scripts/tests/io/*).
         flags.insert(flags.begin(), "--headless");
+        // The instruction budget bounds the child's WORK. A script stuck in
+        // an infinite loop is stopped by the VM itself and exits with the
+        // "instruction limit exceeded" error, which the parent recognizes
+        // below. Unlike a wall-clock deadline this cannot fire just because
+        // the machine was busy.
+        if (instruction_budget > 0) {
+            flags.push_back("--max-instructions");
+            flags.push_back(std::to_string(instruction_budget));
+        }
         std::vector<char *> args;
         args.push_back(const_cast<char *>(havel_bin.c_str()));
         for (const auto &f : flags) {
@@ -320,9 +395,7 @@ inline ScriptResult run_script(const std::string &havel_bin, const std::string &
 
 	char buffer[4096];
 	int status = 0;
-	bool killed = false;
 	bool pipe_done = false;
-	auto deadline = start + std::chrono::seconds(timeout_seconds);
 
 	while (true) {
 		if (!pipe_done) {
@@ -357,28 +430,26 @@ inline ScriptResult run_script(const std::string &havel_bin, const std::string &
 			}
 			break;
 		}
-
-		auto now = std::chrono::high_resolution_clock::now();
-		if (now >= deadline) {
-			kill(pid, SIGKILL);
-			waitpid(pid, &status, 0);
-			killed = true;
-			if (!pipe_done) close(pipefd[0]);
-			break;
-		}
 	}
 
 	auto end = std::chrono::high_resolution_clock::now();
 	result.elapsed_ms = std::chrono::duration<double, std::milli>(end - start).count();
 
-    if (killed) {
-        result.timed_out = true;
-        result.exit_code = -1;
-    } else if (WIFEXITED(status)) {
+    if (WIFEXITED(status)) {
         result.exit_code = WEXITSTATUS(status);
         result.passed = (result.exit_code == 0);
     } else if (WIFSIGNALED(status)) {
         result.exit_code = -WTERMSIG(status);
+    }
+
+    // The VM reports its own instruction-limit abort on stdout:
+    //   "VM instruction limit exceeded (N) - possible infinite loop"
+    // Recognizing it here separates "the script loops forever" from "the
+    // script raised an ordinary error", which both exit non-zero.
+    result.instruction_limited =
+        result.output_tail.find("instruction limit exceeded") != std::string::npos;
+    if (result.instruction_limited) {
+        result.passed = false;
     }
 
 	return result;
@@ -406,7 +477,7 @@ inline void print_result_tail(const ScriptResult &result, size_t max_lines = 40)
 
 inline int run_script_suite(const std::string &havel_bin, const std::vector<std::string> &directories, bool verbose = false,
                             const std::vector<std::string> &pre_flags = {},
-                            int timeout_seconds = 60) {
+                            uint64_t default_budget = kDefaultInstructionBudget) {
     auto scripts = discover_scripts(directories);
     if (scripts.empty()) {
         std::cerr << "no .hv scripts found in specified directories" << std::endl;
@@ -416,20 +487,21 @@ inline int run_script_suite(const std::string &havel_bin, const std::vector<std:
     int pass = 0, fail = 0, skip = 0;
     std::vector<ScriptResult> results;
     for (const auto &script : scripts) {
-        auto result = run_script(havel_bin, script, timeout_seconds, pre_flags);
+        auto result = run_script(havel_bin, script, pre_flags,
+                                 resolve_instruction_budget(script, default_budget));
         results.push_back(result);
         if (result.passed) {
             std::cout << "[PASS] " << script << " (" << result.elapsed_ms << "ms)" << std::endl << std::flush;
             pass++;
-        } else if (result.timed_out) {
-            // A timeout here usually means the script is hang-prone by
-            // design (hotkey registration enters the launcher keep-alive
-            // loop; UI/server scripts wait for input or listen) rather
-            // than broken. An infinite-loop bug would look the same, so
-            // the note states both; run such scripts with a visible
-            // display to verify.
-            std::cout << "[SKIP] " << script << " (timeout: hangs for user input/UI, or an infinite loop)" << std::endl << std::flush;
-            skip++;
+        } else if (result.instruction_limited) {
+            // The VM stopped the script because it exceeded its instruction
+            // budget: the script is looping (or doing unbounded work). This
+            // is a real defect in the script, not a slow machine.
+            std::cout << "[FAIL] " << script << " (infinite loop: exceeded the "
+                      << resolve_instruction_budget(script, default_budget)
+                      << "-instruction budget)" << std::endl << std::flush;
+            print_result_tail(result);
+            fail++;
         } else if (result.exit_code == -6 || result.exit_code == -11) {
             // Crash, not an assertion failure: UI/server scripts in a
             // display-less environment crash rather than fail (observed:
@@ -466,15 +538,38 @@ inline int list_scripts(const std::vector<std::string> &directories) {
 // after a fast iteration, or pre-merge).
 enum class TierMode { All, Fast, OnlySlow };
 
+// Forward declaration: run_smoke_suite() is the single-directory wrapper
+// around run_smoke_suite_dirs(), which collects from several directories
+// and runs them in parallel. The defaults live on the definition, not here.
+inline int run_smoke_suite_dirs(const std::string &havel_bin,
+                                const std::vector<std::string> &smoke_dirs,
+                                bool verbose = false,
+                                const std::vector<std::string> &pre_flags = {},
+                                const std::vector<std::string> &name_filters = {},
+                                TierMode tier_mode = TierMode::All,
+                                uint64_t default_budget = kDefaultInstructionBudget);
+
 inline int run_smoke_suite(const std::string &havel_bin, const std::string &smoke_dir,
                            bool verbose = false,
                            const std::vector<std::string> &pre_flags = {},
-                           int timeout_seconds = 60,
                            const std::vector<std::string> &name_filters = {},
                            TierMode tier_mode = TierMode::All) {
-    auto scripts = discover_scripts({smoke_dir});
+    return run_smoke_suite_dirs(havel_bin, {smoke_dir}, verbose, pre_flags,
+                                name_filters, tier_mode, kDefaultInstructionBudget);
+}
+
+inline int run_smoke_suite_dirs(const std::string &havel_bin,
+                           const std::vector<std::string> &smoke_dirs,
+                           bool verbose,
+                           const std::vector<std::string> &pre_flags,
+                           const std::vector<std::string> &name_filters,
+                           TierMode tier_mode,
+                           uint64_t default_budget) {
+    auto scripts = discover_scripts(smoke_dirs);
     if (scripts.empty()) {
-        std::cerr << "no .hv smoke tests found in " << smoke_dir << std::endl;
+        std::cerr << "no .hv smoke tests found in";
+        for (const auto &d : smoke_dirs) std::cerr << " " << d;
+        std::cerr << std::endl;
         return 1;
     }
     const size_t total_discovered = scripts.size();
@@ -488,8 +583,9 @@ inline int run_smoke_suite(const std::string &havel_bin, const std::string &smok
         if (filtered.empty()) {
             std::cerr << (tier_mode == TierMode::Fast
                               ? "no fast-tier tests found (all slow?) in "
-                              : "no slow-tier tests found in ")
-                      << smoke_dir << std::endl;
+                              : "no slow-tier tests found in ");
+            for (const auto &d : smoke_dirs) std::cerr << " " << d;
+            std::cerr << std::endl;
             return 1;
         }
         scripts = std::move(filtered);
@@ -510,7 +606,9 @@ inline int run_smoke_suite(const std::string &havel_bin, const std::string &smok
         if (filtered.empty()) {
             std::cerr << "no smoke tests match filter:";
             for (const auto &f : name_filters) std::cerr << " " << f;
-            std::cerr << " (in " << smoke_dir << ")" << std::endl;
+            std::cerr << " (in";
+            for (const auto &d : smoke_dirs) std::cerr << " " << d;
+            std::cerr << ")" << std::endl;
             return 1;
         }
         scripts = std::move(filtered);
@@ -544,16 +642,15 @@ inline int run_smoke_suite(const std::string &havel_bin, const std::string &smok
 
     // Each script runs in its own subprocess whose self-hosted boot costs
     // ~4s, so a sequential suite takes 20+ minutes. Run them concurrently.
-    // Cap workers to keep CPU usage bounded: each subprocess runs its own
-    // single-threaded VM dispatch loop at 100% of a core. Allow an explicit
-    // override via HAVEL_TEST_THREADS (e.g. =0 or =1 for headroom).
+    // The worker count is fixed: each subprocess runs its own
+    // single-threaded VM dispatch loop at 100% of a core, and a count
+    // derived from the machine's core count made the suite's runtime and
+    // its contention level depend on the box it ran on. Allow an explicit
+    // override via HAVEL_TEST_THREADS.
     unsigned workers = 4;
     if (const char *env = std::getenv("HAVEL_TEST_THREADS")) {
         int n = std::atoi(env);
         if (n > 0) workers = static_cast<unsigned>(n);
-    } else {
-        workers = std::min<unsigned>(
-            std::max(std::thread::hardware_concurrency(), 1u), 4u);
     }
     std::atomic<size_t> next{0};
     std::vector<ScriptResult> results_par(scripts.size());
@@ -562,8 +659,8 @@ inline int run_smoke_suite(const std::string &havel_bin, const std::string &smok
       for (;;) {
         size_t i = next.fetch_add(1);
         if (i >= scripts.size()) break;
-        auto result =
-            run_script(havel_bin, scripts[i], timeout_seconds, pre_flags);
+        auto result = run_script(havel_bin, scripts[i], pre_flags,
+                                 resolve_instruction_budget(scripts[i], default_budget));
         results_par[i] = result;
         auto name = fs::path(scripts[i]).stem().string();
         std::lock_guard<std::mutex> lk(io_mtx);
@@ -573,16 +670,22 @@ inline int run_smoke_suite(const std::string &havel_bin, const std::string &smok
                       << "ms)" << std::endl
                       << std::flush;
           pass++;
-        } else if (result.timed_out) {
-          std::cout << "[FAIL] " << name << " (timeout)" << std::endl
-                    << std::flush;
-          fail++;
         } else if (result.exit_code == -6 || result.exit_code == -11) {
           if (verbose)
             std::cout << "[SKIP] " << name << " (crash, needs event loop)"
                       << std::endl
                       << std::flush;
           skip++;
+        } else if (result.instruction_limited) {
+          // The VM stopped the script because it exceeded its instruction
+          // budget: the script is looping (or doing unbounded work). This
+          // is a real defect in the script, not a slow machine.
+          std::cout << "[FAIL] " << name << " (infinite loop: exceeded the "
+                    << resolve_instruction_budget(scripts[i], default_budget)
+                    << "-instruction budget)" << std::endl
+                    << std::flush;
+          print_result_tail(result);
+          fail++;
         } else if (!pre_flags.empty() && result.exit_code != 255) {
           // Self-hosted mode: the script's return value becomes the exit
           // code. The suite's success convention is return 0 ('val
@@ -667,7 +770,7 @@ inline bool probe_aot_support(const std::string &havel_bin) {
         std::ofstream ofs(probe_script);
         ofs << "x = 1\nprint(\"aot probe ${x}\")\n";
     }
-    auto result = run_script(havel_bin, probe_script, 120,
+    auto result = run_script(havel_bin, probe_script,
                              {"--target", "aot", "-o", probe_out});
     fs::remove_all(probe_dir, ec);
     return result.passed;
@@ -689,18 +792,16 @@ struct ComparisonResult {
 };
 
 inline ComparisonResult run_script_all_modes(const std::string &havel_bin, const std::string &script_path,
-                                              int timeout_seconds = 60,
                                               const std::string &self_hosted_path = "",
                                               bool aot_available = false) {
     ComparisonResult result;
     result.path = script_path;
-    int timeout_sec = timeout_seconds; // Avoid parameter shadowing
 
     // 1. C++ pipeline mode
     {
         std::vector<std::string> flags = {"--run", "--no-self-hosted"};
         auto start = std::chrono::high_resolution_clock::now();
-        auto script_result = run_script(havel_bin, script_path, timeout_sec, flags);
+        auto script_result = run_script(havel_bin, script_path, flags);
         auto end = std::chrono::high_resolution_clock::now();
         result.cpp_ms = std::chrono::duration<double, std::milli>(end - start).count();
         result.cpp_passed = script_result.passed;
@@ -711,7 +812,7 @@ inline ComparisonResult run_script_all_modes(const std::string &havel_bin, const
     if (!self_hosted_path.empty()) {
         std::vector<std::string> flags = {"--run", "--self-hosted-path", self_hosted_path};
         auto start = std::chrono::high_resolution_clock::now();
-        auto script_result = run_script(havel_bin, script_path, timeout_sec, flags);
+        auto script_result = run_script(havel_bin, script_path, flags);
         auto end = std::chrono::high_resolution_clock::now();
         result.self_hosted_ms = std::chrono::duration<double, std::milli>(end - start).count();
         result.self_hosted_passed = script_result.passed;
@@ -732,7 +833,7 @@ inline ComparisonResult run_script_all_modes(const std::string &havel_bin, const
         // run_script appends script_path itself - do not duplicate it here
         std::vector<std::string> flags = {"--target", "aot", "-o", output_path};
         auto start = std::chrono::high_resolution_clock::now();
-        auto script_result = run_script(havel_bin, script_path, timeout_sec, flags);
+        auto script_result = run_script(havel_bin, script_path, flags);
         auto end = std::chrono::high_resolution_clock::now();
         result.aot_ms = std::chrono::duration<double, std::milli>(end - start).count();
         result.aot_passed = script_result.passed;
@@ -752,7 +853,7 @@ inline ComparisonResult run_script_all_modes(const std::string &havel_bin, const
 
 inline int run_comparison_suite(const std::string &havel_bin, const std::vector<std::string> &directories,
                                  const std::string &self_hosted_path = "",
-                                 int timeout_seconds = 60, bool verbose = false) {
+                                 bool verbose = false) {
     auto scripts = discover_scripts(directories);
     if (scripts.empty()) {
         std::cerr << "no .hv scripts found in specified directories" << std::endl;
@@ -770,7 +871,7 @@ inline int run_comparison_suite(const std::string &havel_bin, const std::vector<
     auto suite_start = std::chrono::high_resolution_clock::now();
 
     for (const auto &script : scripts) {
-        auto result = run_script_all_modes(havel_bin, script, timeout_seconds,
+        auto result = run_script_all_modes(havel_bin, script,
                                            self_hosted_path, aot_available);
         if (!script.empty()) {
             std::cout << "[RUN] " << script << " ..." << std::flush << std::endl;

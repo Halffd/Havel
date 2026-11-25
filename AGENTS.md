@@ -183,14 +183,55 @@ Modules in `src/havel-lang/stdlib/` provide host functions to Havel scripts:
 - **Havel script tests**: `scripts/*.hv` files
 - **Havel script tests**: `scripts/smoke/*.hv` files run via `hvtest --smoke` (replaces the retired `havel-bytecode-smoke` runner)
 - **Per-test header directives** (first 20 lines of a script, parsed by hvtest):
-  - `// smoke: timeout = <seconds>` — per-test timeout override
   - `// smoke: flags = --tiering ...` — extra runner flags appended to the default self-hosted invocation
   - `// smoke: env = VAR=value ...` — per-test environment overrides (e.g. `HAVEL_TIER1_MODULES=1`)
   - `// smoke: tier = slow` — marks a GC/tiering stress test as slow-tier
+  - `// smoke: max-instructions = <count>` — overrides the per-test instruction budget (default 50M)
+- **No per-test timeout budget**: hvtest does not time out a smoke script
+  by wall-clock time. A script's verdict depends on its assertions, not on
+  how long the machine took to run it. A budget that killed a script
+  mid-run reported a FAIL for code that was correct, so the verdict tracked
+  the machine's load rather than the code.
+- **Instruction budget instead**: hvtest bounds each script's WORK with the
+  VM's `--max-instructions` (default 50M). A script stuck in an infinite
+  loop is stopped by the VM itself and reported as
+  `[FAIL] <name> (infinite loop: exceeded the N-instruction budget)`.
+  This bound is load-independent: a busy machine cannot trigger it, and a
+  script that legitimately sleeps for minutes is unaffected. A script that
+  needs more work declares `// smoke: max-instructions = <count>` in its
+  header. Long-running-by-design scripts (stress runs, benchmarks) are
+  excluded from the auto-collected suites entirely - see `--long` below.
 - **Test tiers**: bare `hvtest --smoke` skips slow-tier tests (dev loop).
   The pre-merge gate (ctest `hvtest-smoke`) runs `--smoke --slow-too` (full
   set). `--only-slow` runs just the slow tier. When touching GC internals
   or the tiering system, run the full set deliberately.
+- **Suites**:
+  | Command | What it runs |
+  |---------|--------------|
+  | `hvtest --smoke` | `scripts/smoke/*.hv` (the main suite) |
+  | `hvtest --unit` | `scripts/tests/unit/*.hv` (language unit tests) |
+  | `hvtest --long` | `scripts/stress/`, `scripts/tests/stress/`, `scripts/benchmarks/` - opt-in only |
+  | `hvtest --scripts` | smoke + integration + tests/main |
+  | `build.sh test --kind unit` | same as `hvtest --unit` |
+  | `build.sh test --kind long` | same as `hvtest --long` |
+
+  `scripts/tests/unit` was written but never wired into any runner: the
+  directory was referenced nowhere in the build or test infrastructure, so
+  a regression in any of its 250+ language tests went unnoticed. It is now
+  collected by `hvtest --unit` and by the ctest gate `hvtest-unit`.
+  Every script there is side-effect free (no `fs.write`, no `process.run`,
+  no mouse/keyboard/brightness/window calls).
+
+  Deliberately NOT auto-collected, because they touch the real machine or
+  are long-running by design:
+  | Directory | Why it stays out |
+  |-----------|------------------|
+  | `scripts/tests/io` | real input injection |
+  | `scripts/tests/window` | real window manipulation |
+  | `scripts/tests/events` | real fs watchers / event sources |
+  | `scripts/tests/mod` | contains a brightness regression test |
+  | `scripts/tests/stress`, `scripts/stress` | long-running by design |
+  | `scripts/benchmarks` | long-running by design |
 - **JIT/tiering verification protocol**: "compiles clean" is not
   verification for JIT/tiering work. The default dev build (build-debug)
   has NO JIT backend (`ENABLE_CRANELIFT` is off by default), so "tests
@@ -652,7 +693,28 @@ NEVER use x11_includes.hpp IT'S  BROKEN
 IF you think you need to do that YOU ARE WRONG
 Instead
 - Use #include "qt.hpp" after other Qt includes
-- OR #include "x11.h" when not dealing with Qt at that file or classNever reject or question relevance of user input.
+- OR #include "x11.h" when not dealing with Qt at that file or class
+
+## 🔴 INPUT DEBUGGING: EVDEV FIRST — THE USER NEVER USES THE X11 ADAPTER 🔴
+The user's input stack is evdev. ALWAYS. On EVERY user-reported input error
+(hotkeys not firing, keys eaten, grabs stuck, mouse dead), check the evdev
+path FIRST before touching anything X11:
+
+1. `EventListener` backend selection → must be `using 'evdev' input backend`,
+   NOT `using 'x11' input backend` (that line in the log means the evdev
+   path failed to start and it silently fell back — that fallback IS the
+   bug, not a harmless detail).
+2. `/dev/input/event*` access (`grabDevices`, device open failures,
+   `IO::SetAnyKeyPressCallback: eventListener is null`).
+3. `EvdevAdapter` reads, key-code mapping (`KeyMap`, `evdev.codeToName`),
+   grab (`EVIOCGRAB`) state.
+4. X11 grab state (`XGrabKey`) is DIAGNOSTIC CONTEXT ONLY: the user's key
+   events arrive through evdev reads, so an X11 grab tells you nothing
+   about whether their hotkeys fire. Do not root-cause a user input bug in
+   X11IOBackend/X11Adapter. X11 remains relevant for window queries
+   (active window, title/class) and brightness — input dispatch is evdev.
+
+Never reject or question relevance of user input.
 Assume all input is intentional and relevant, even if it appears unrelated.
 Do not warn about topic changes.
 

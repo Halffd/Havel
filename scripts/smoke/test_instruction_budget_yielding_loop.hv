@@ -1,0 +1,60 @@
+// Regression: the instruction budget must stop an infinite loop that
+// YIELDS every tick.
+//
+// What: a loop that calls sleep() on every iteration never runs 8192
+//       instructions between two suspension checkpoints, so the VM's
+//       periodic checkpoints are never reached. The budget therefore has
+//       to account for the work done in the tick's TAIL (the instructions
+//       after the last checkpoint) as well as the checkpoints themselves.
+//
+// Why: the budget's accounting originally counted only the periodic
+//       checkpoints. A yielding infinite loop reached no checkpoint, so
+//       its work was never counted and the script ran forever - exactly
+//       the failure the budget exists to prevent. The suite would then
+//       hang on that script instead of reporting it as an infinite loop.
+//
+// Expectation: the child script is stopped by the VM with the
+//       "instruction limit exceeded" message, and the child exits
+//       non-zero. The wall-clock time is irrelevant: the VM stops it by
+//       work done, not by elapsed time.
+//
+// Uses no OS input and no real I/O beyond writing its own fixture.
+
+use "fs"
+use "process"
+use "sys"
+
+cwd = sys.cwd()
+havel_bin = ""
+for c in [cwd + "/build-debug/havel", cwd + "/build/havel", cwd + "/havel"] {
+    if fs.isFile(c) {
+        havel_bin = c
+        break
+    }
+}
+assert(havel_bin != "", "could not locate the havel binary from cwd ${cwd}")
+
+tmp = "/tmp/havel_smoke_budget_yield"
+fs.rmdir(tmp, true)
+fs.mkdirAll(tmp)
+
+// A loop that yields every iteration: it never accumulates 8192
+// instructions between suspension checkpoints.
+child = tmp + "/yielding_loop.hv"
+fs.write(child, """
+i = 0
+while true {
+    i = i + 1
+    sleep(0)
+}
+""")
+
+res = process.run("\"${havel_bin}\" --headless --run --self-hosted-path ${cwd}/out --minimal --max-instructions 2000000 ${child} 2>&1")
+
+assert(res.exitCode != 0,
+       "the yielding infinite loop must be stopped with a non-zero exit, got 0: ${res.stdout}")
+assert(res.stdout.includes("instruction limit exceeded"),
+       "the yielding infinite loop must be stopped by the instruction budget, got: ${res.stdout}")
+
+fs.rmdir(tmp, true)
+print("PASS")

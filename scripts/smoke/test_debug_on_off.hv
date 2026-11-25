@@ -2,7 +2,6 @@
 // What: debug.on() raises the language trace flags and returns true;
 //       debug.off() clears them. The "set -x / set +x" pair.
 // Expected: exit 0, no output on success.
-// smoke: timeout = 30
 
 if debug.isOn("all") { print("FAIL: flags set before on()"); exit(1) }
 

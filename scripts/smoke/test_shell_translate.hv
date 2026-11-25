@@ -6,7 +6,6 @@
 //      print for echo, fs.isFile for [ -f ], and helpful errors for the bash
 //      syntax Havel deliberately rejects.
 // Expected: exit 0, no output on success.
-// smoke: timeout = 30
 
 // Havel interpolates $name inside double-quoted strings, so shell-mode test
 // input containing dollars is assembled from this literal.

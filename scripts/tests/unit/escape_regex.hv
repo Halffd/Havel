@@ -1,6 +1,10 @@
 // smoke: escape-regex = 4
 use regex
-s = escape_regex("a.b")
+// The module's escape function is regex_escape (exposed as regex.escape);
+// the test was written against the name escape_regex, which never existed
+// in the module - it only compiled because this directory was never
+// wired into a runner.
+s = regex_escape("a.b")
 // "a.b" -> "a\\.b" (escaped the dot)
 val __result = #s
 if __result != 4 {

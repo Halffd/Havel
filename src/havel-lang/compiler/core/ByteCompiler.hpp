@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../../ast/AST.h"
+#include "../../ast/YieldAnalysis.hpp"
 #include "BytecodeIR.hpp"
 #include "../semantic/LexicalResolver.hpp"
 #include "../semantic/TypeChecker.hpp"
@@ -259,11 +260,6 @@ const ResolvedBinding *bindingFor(const ast::Identifier &id) const;
   void compileWithMemberLookup(const ResolvedBinding &binding);
   uint32_t declarationSlot(const ast::Identifier &id) const;
   void reserveLocalSlot(uint32_t slot);
-
-  
-  bool functionContainsYield(const ast::BlockStatement &body) const;
-  bool statementContainsYield(const ast::Statement &stmt) const;
-  bool expressionContainsYield(const ast::Expression &expr) const;
 
   // Try to evaluate an expression to a constant Value at compile time.
   // Returns std::nullopt if the expression cannot be evaluated at compile time.

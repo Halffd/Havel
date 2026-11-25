@@ -47,6 +47,12 @@ TID = {
     Hash: 156,
     Comment: 157,
     UnsafeMarker: 158, Update: 159, BinaryOp: 160,
+    // The C++ lexer emits TokenType::ShBlock for a `sh { ... }` block.
+    // Without a row here, tokenize() tags those tokens with tid=null and
+    // the Pratt parser's binding-power lookup dies on the null key - the
+    // same failure mode the `emit` token had. Drift guard:
+    // tests/token_type_names_drift_ut.cpp.
+    ShBlock: 162,
 }
 
 // --- Reverse mapping: integer ID -> string type name ---

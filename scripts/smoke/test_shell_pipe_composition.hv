@@ -4,7 +4,6 @@
 //       object. Function stages (`... | lines | count`) also work.
 // Why: the bash `cat f | grep x | wc -l` shape in one language.
 // Expected: exit 0, no output on success.
-// smoke: timeout = 60
 
 _sorted = `printf "banana\napple\ncherry\n"` | `sort`
 if !_sorted.success { print("FAIL: pipeline not success: " + str(_sorted.exitCode)); exit(1) }

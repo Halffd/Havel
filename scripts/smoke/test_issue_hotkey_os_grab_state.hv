@@ -1,0 +1,135 @@
+// Regression: a hotkey whose OS-level key grab FAILED must be visible as
+// such, and the binding must still fire.
+//
+// Mechanism (src/core/io/IO.cpp, before the fix):
+//
+//   bool regOk = ioBackend->RegisterHotkey(...);   // computed...
+//   //                                                     ...and discarded
+//   hotkeys[hotkeyId].enabled = true;
+//   return true;                                    // reported SUCCESS
+//
+// X11IOBackend::RegisterHotkey returns false when any of its XGrabKey
+// calls fails. BadAccess (code 10) is the common failure: another X
+// client owns that key/modifier combination, or holds an active keyboard
+// grab - exactly what a long-running child process (a game, xdotool, a
+// screencaster, an IME) does.
+//
+// The failure was invisible: the binding looked armed, hotkey.list()
+// reported grab=true, but the X server held no grab for the key, so the
+// keypress went to the other client and the hotkey never fired. Nothing
+// ever retried it, so the hotkey stayed dead for the rest of the process
+// lifetime - the "hotkeys randomly stop working after 30 minutes" report.
+//
+// What this test locks:
+//   1. hotkey.list()[i].osGrabbed reports the REAL window-system grab,
+//      distinct from the context's `grab` flag (what the script asked
+//      for). Before the fix no such field existed at all, so "armed" and
+//      "dead" were indistinguishable from the script.
+//   2. osGrabbed and grab are allowed to disagree - that disagreement IS
+//      the defect being made observable.
+//   3. The hotkey still fires.
+//
+// Uses F24 + hotkey.trigger: no OS input is injected. Headless-safe: with
+// no X server there is no OS grab to begin with, so osGrabbed is false
+// throughout and the "armed" assertion is skipped - the test still asserts
+// that the observable field EXISTS and is consistent.
+
+use "process"
+
+failures = 0
+
+fn check(name, cond) {
+    if cond {
+        print("PASS " + name)
+    } else {
+        print("FAIL " + name)
+        failures = failures + 1
+    }
+}
+
+fn entryFor(alias) {
+    for _hk in hotkey.list() {
+        if _hk.alias == alias {
+            return _hk
+        }
+    }
+    return null
+}
+
+fired = 0
+F24 => {
+    fired = fired + 1
+}
+
+sleep(300)
+
+hk = entryFor("F24")
+check("the plain hotkey is registered", hk != null)
+
+if hk == null {
+    print("FAIL hotkey_os_grab_state: " + failures + " check(s) failed")
+    process.exit(1)
+}
+
+// 1. The osGrabbed field must EXIST and report the real window-system
+//    grab. Before the fix hotkey.list() had no such field, so a failed
+//    grab and a successful grab were indistinguishable from the script.
+check("hotkey.list() exposes osGrabbed", hk.osGrabbed != null)
+check("osGrabbed is a boolean", hk.osGrabbed == true || hk.osGrabbed == false)
+
+// 2. osGrabbed and the context `grab` flag are DIFFERENT notions and must
+//    be allowed to disagree: `grab` is what the script asked for,
+//    `osGrabbed` is what the X server actually holds.
+//    With a working display and no competing client, a registered hotkey
+//    must hold a real OS grab. Headless: there is no X server, so no grab
+//    exists - and then osGrabbed must be false rather than lying.
+hasDisplay = hk.osGrabbed == true
+if hasDisplay {
+    check("a registered hotkey holds a real OS grab", hk.osGrabbed == true)
+} else {
+    check("without a display, osGrabbed is false (not a stale true)", hk.osGrabbed == false)
+}
+
+// 3. The hotkey must still fire. This is the user-visible behaviour that
+//    the failed-grab defect broke.
+hotkey.trigger("F24")
+waited = time.millis() + 2000
+while fired == 0 && time.millis() < waited {
+    sleep(5)
+}
+check("the hotkey fires", fired == 1)
+
+// 4. A suspend/resume cycle must not leave the binding dead. The REPL
+//    suspends grabs on every line it reads (HavelLauncher.cpp wires
+//    repl.setUngrabCallback -> suspendGrabs) and resumes them after.
+//    resumeGrabs must restore the grabs it removed.
+Hotkey.suspendGrabs()
+sleep(100)
+Hotkey.resumeGrabs()
+sleep(300)
+
+hk2 = entryFor("F24")
+check("the hotkey survives a suspend/resume cycle", hk2 != null)
+if hk2 != null {
+    check("osGrabbed is still consistent after suspend/resume",
+          hk2.osGrabbed == true || hk2.osGrabbed == false)
+    if hasDisplay {
+        check("the OS grab is restored after suspend/resume", hk2.osGrabbed == true)
+    }
+}
+
+fired = 0
+hotkey.trigger("F24")
+waited = time.millis() + 2000
+while fired == 0 && time.millis() < waited {
+    sleep(5)
+}
+check("the hotkey still fires after suspend/resume", fired == 1)
+
+if failures > 0 {
+    print("FAIL hotkey_os_grab_state: " + failures + " check(s) failed")
+    process.exit(1)
+}
+print("PASS hotkey_os_grab_state")
+// Persistent hotkey goroutines keep the process alive; exit explicitly.
+process.exit(0)

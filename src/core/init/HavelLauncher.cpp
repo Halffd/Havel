@@ -1,5 +1,6 @@
 #include "HavelLauncher.hpp"
 #include "Havel.hpp"
+#include "ScriptSourceJoin.hpp"
 // Build identity (commit/branch/dirty for --version). Generated at build time
 // into the build tree by cmake/BuildIdentity.cmake.in, so an incremental
 // rebuild cannot carry a stale commit stamp. Guarded with __has_include so a
@@ -240,7 +241,8 @@ static void appendDefaultNativeLinkLibraries(std::string &linkCmd) {
 
 static std::optional<std::pair<std::string, std::string>>
 loadScriptFiles(const std::vector<std::string> &files) {
-  std::string code;
+  std::vector<std::string> contents;
+  contents.reserve(files.size());
   std::string names;
   for (const auto &f : files) {
     std::string content = readScriptFile(f);
@@ -248,12 +250,15 @@ loadScriptFiles(const std::vector<std::string> &files) {
       error("Failed to read script file: {}", f);
       return std::nullopt;
     }
-    code += content + "\n";
+    contents.push_back(std::move(content));
     if (!names.empty())
       names += " + ";
     names += f;
   }
-  return {{code, names}};
+  // A single file is compiled VERBATIM: the bytecode cache validates an
+  // entry against the exact text it would compile, so a byte the join adds
+  // makes the entry unservable. See ScriptSourceJoin.hpp.
+  return {{joinScriptContents(contents), names}};
 }
 
 static void appendEval(std::string &code, std::string &names, const std::string &eval,
@@ -957,8 +962,18 @@ public:
         }
 
         info("Havel started successfully - running in system tray");
-        havel_inst.setShutdownCallback(
-            [](int code) { host::UIManager::instance().backend()->quitEventLoop(code); });
+        // Capture the validated backend instead of re-fetching it: the
+        // shutdown callback runs while the process tears down, and
+        // UIManager::backend() can return null then (its backend_ is
+        // destroyed without resetting initialized_, so the lazy re-create
+        // never happens). quitEventLoopIfAlive also refuses to call
+        // through a null pointer - quitEventLoop is pure virtual, so that
+        // reached the pure-virtual thunk and aborted the process with
+        // "pure virtual method called" instead of letting the script's
+        // error exit cleanly.
+        havel_inst.setShutdownCallback([backend](int code) {
+          host::quitEventLoopIfAlive(backend, code);
+        });
 
         if (auto *io = havel_inst.getIO()) {
           backend->setIdleCallback([io]() { io->PumpOnce(); });
@@ -1070,8 +1085,18 @@ public:
         return 1;
       }
 
-      havel_inst.setShutdownCallback(
-          [](int code) { host::UIManager::instance().backend()->quitEventLoop(code); });
+      // Capture the validated backend instead of re-fetching it: the
+      // shutdown callback runs while the process tears down, and
+      // UIManager::backend() can return null then (its backend_ is
+      // destroyed without resetting initialized_, so the lazy re-create
+      // never happens). quitEventLoopIfAlive also refuses to call
+      // through a null pointer - quitEventLoop is pure virtual, so that
+      // reached the pure-virtual thunk and aborted the process with
+      // "pure virtual method called" instead of letting the script's
+      // error exit cleanly.
+      havel_inst.setShutdownCallback([backend](int code) {
+        host::quitEventLoopIfAlive(backend, code);
+      });
 
       if (auto *io = havel_inst.getIO()) {
         backend->setIdleCallback([io]() { io->PumpOnce(); });
@@ -1530,7 +1555,8 @@ public:
       launcherPath = absPath.string();
 
     // Load user script files to check for hotkeys (like ScriptStrategy does)
-    std::string combinedCode;
+    std::vector<std::string> scriptContents;
+    scriptContents.reserve(cfg.scriptFiles.size());
     std::string combinedNames;
     for (const auto &f : cfg.scriptFiles) {
       std::string content = readScriptFile(f);
@@ -1538,11 +1564,13 @@ public:
         error("Failed to read script file: {}", f);
         return 1;
       }
-      combinedCode += content + "\n";
+      scriptContents.push_back(std::move(content));
       if (!combinedNames.empty())
         combinedNames += " + ";
       combinedNames += f;
     }
+    // A single file is compiled VERBATIM - see ScriptSourceJoin.hpp.
+    std::string combinedCode = joinScriptContents(scriptContents);
     if (!cfg.evalString.empty()) {
       // -e/--eval-print wraps the expression so its value is printed (same
       // contract as appendEval on the other strategies).
@@ -2130,6 +2158,13 @@ LaunchConfig HavelLauncher::parseArgs(int argc, char *argv[]) {
     } else if (arg == "--debug-hotkeys" || arg == "-dhk") {
       debugging::debug_hotkeys = true;
       cfg.debugHotkeys = true;
+    } else if (arg == "--debug-var-changed" || arg == "-dvc") {
+      // Conditional-hotkey re-eval path: "[Havel] cond gid=... X->Y" lines
+      // (Havel.cpp), "[Havel] focus poll" transitions, and the per-tick
+      // VM var-changed trace. debug() is level-gated; raise the log level
+      // or the flag prints nothing visible.
+      debugging::debug_var_changed = true;
+      Logger::getInstance().setLogLevel(Logger::LOG_DEBUG);
     } else if (arg == "--debug-events" || arg == "-dev") {
       // Input-path debugging: event pump + grab lifecycle (EventListener)
       // and evdev adapter reads. debug() output is level-gated, so raise
@@ -2597,6 +2632,7 @@ Options:
   -de, --debug-engine Enable engine debugging
    -dio, --debug-io    Enable IO debugging
    -dhk, --debug-hotkeys Enable hotkey debugging
+   -dvc, --debug-var-changed Enable conditional-hotkey re-eval + focus-poll debugging
    -dev, --debug-events  Enable input event + grab debugging (event listener, evdev)
    --ui BACKEND        Force UI backend for UI sessions (qt, gtk, imgui, auto)
   --error             Stop on first error/warning
@@ -2670,10 +2706,12 @@ int havel::init::HavelLauncher::runBuild(const havel::init::LaunchConfig &cfg) {
     isBytecode = true;
     primaryFile = cfg.scriptFiles[0];
   } else {
+    std::vector<std::string> scriptContents;
+    scriptContents.reserve(cfg.scriptFiles.size());
     for (const auto &f : cfg.scriptFiles) {
       std::string content = readScriptFile(f);
       if (!content.empty()) {
-        combinedCode += content + "\n";
+        scriptContents.push_back(std::move(content));
         if (primaryFile.empty())
           primaryFile = f;
       } else {
@@ -2681,6 +2719,8 @@ int havel::init::HavelLauncher::runBuild(const havel::init::LaunchConfig &cfg) {
         return 1;
       }
     }
+    // A single file is compiled VERBATIM - see ScriptSourceJoin.hpp.
+    combinedCode = joinScriptContents(scriptContents);
   }
 
   if (combinedCode.empty() && !isBytecode) {

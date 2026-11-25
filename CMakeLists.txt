@@ -2314,7 +2314,19 @@ if(CMAKE_BUILD_TYPE STREQUAL "Debug")
   enable_testing()
   # Pre-merge gate: full tier including slow stress runs. Dev-loop
   # invocations (bare `hvtest --smoke`) skip the slow tier by default.
+  #
+  # No per-test timeout: a smoke script's verdict must depend on its
+  # assertions, not on how long the machine took to run it. A budget that
+  # killed a script mid-run reported a FAIL for code that was correct, and
+  # the verdict then tracked the machine's load rather than the code.
   add_test(NAME hvtest-smoke COMMAND hvtest --smoke --slow-too)
+  # The language unit tests (scripts/tests/unit) were written but never
+  # wired into any runner: the directory was referenced nowhere in the
+  # build or test infrastructure, so a regression in any of them went
+  # unnoticed. Every script there is side-effect free (no fs.write, no
+  # process.run, no mouse/keyboard/brightness/window calls), so it is safe
+  # to collect automatically.
+  add_test(NAME hvtest-unit COMMAND hvtest --unit)
   # Module globals drift guard: fails if a setGlobal() module global is not
   # listed in kModuleGlobals (ModuleGlobals.hpp), which strict-mode resolution
   # for --build/--full-aot depends on.
@@ -2982,6 +2994,13 @@ file(MAKE_DIRECTORY ${MODULE_PLUGIN_OUTPUT_DIR})
 function(add_havel_module_plugin MODULE_NAME MODULE_SOURCE)
   set(MODULE_TARGET "havel_mod_${MODULE_NAME}")
   add_library(${MODULE_TARGET} MODULE ${MODULE_SOURCE})
+  # Record the plugin .so this target produces so the prune below can tell a
+  # legitimately-configured module from an orphan left by a previous build.
+  # Directory scope: add_havel_module_plugin never runs inside another
+  # function, so PARENT_SCOPE is not needed and the list stays visible to the
+  # prune at the end of this block.
+  list(APPEND HAVEL_MODULE_PLUGIN_TARGETS "${MODULE_TARGET}")
+  set(HAVEL_MODULE_PLUGIN_TARGETS "${HAVEL_MODULE_PLUGIN_TARGETS}")
   set_target_properties(${MODULE_TARGET} PROPERTIES
     PREFIX ""
     LIBRARY_OUTPUT_DIRECTORY "${MODULE_PLUGIN_OUTPUT_DIR}"
@@ -3243,6 +3262,53 @@ if(ENABLE_QT AND QT_BACKEND_AVAILABLE AND ENABLE_QT_UI_BACKEND)
   target_include_directories(havel_mod_ui PRIVATE ${_qt_core_inc} ${_qt_gui_inc} ${_qt_widgets_inc})
   target_include_directories(havel_mod_file_automator_gui PRIVATE ${_qt_core_inc} ${_qt_gui_inc} ${_qt_widgets_inc})
   target_include_directories(havel_mod_system_monitor_gui PRIVATE ${_qt_core_inc} ${_qt_gui_inc} ${_qt_widgets_inc})
+endif()
+
+# ==============================================================================
+# PRUNE ORPHAN MODULE PLUGINS
+# ==============================================================================
+# A plugin .so whose target is no longer configured survives in the modules
+# output dir forever (nothing else removes it), and the loader then rejects it
+# on the build-id check - so the module is silently dead with a message that
+# points at "rebuild the module", which is impossible because no target exists.
+# Observed: a reconfigure in which lua5.4/python3-embed were not found left
+# havel_mod_lua.so and havel_mod_python.so stranded while the host and the
+# other 48 plugins were rebuilt with a new build id (the entry in
+# docs/known-issues/stale-module-plugin-survives-reconfigure.md).
+if(ENABLE_MODULE_PLUGINS AND ENABLE_HAVEL_LANG)
+  file(GLOB _havel_plugin_sos "${MODULE_PLUGIN_OUTPUT_DIR}/havel_mod_*.so")
+  if(_havel_plugin_sos)
+    # Orphans only. Never seed this with target NAMES - file(REMOVE) would
+    # treat them as paths relative to the build dir and, worse, mixing names
+    # and paths is what made an earlier version of this prune legitimate
+    # plugins. Collect full paths, remove only those.
+    set(HAVEL_MODULE_PLUGIN_PRUNE_LIST "")
+    foreach(_so ${_havel_plugin_sos})
+      cmake_path(GET _so FILENAME _so_name)
+      # Strip the trailing .so to get the target name. Do it with
+      # string(REGEX REPLACE): cmake_path(REMOVE_EXTENSION) matches the LAST
+      # dot, and a target name may legitimately contain none, so the naive
+      # call leaves "havel_mod_app.so" intact and the TARGET check then fails
+      # for every file - which deletes every plugin, not just orphans.
+      string(REGEX REPLACE "\\.so$" "" _so_name "${_so_name}")
+      # A target is only "configured" if it exists now; checking TARGET rather
+      # than the name list keeps this correct if a plugin is renamed or a
+      # helper call is added inside a conditional that did not fire.
+      if(NOT TARGET ${_so_name})
+        list(APPEND HAVEL_MODULE_PLUGIN_PRUNE_LIST "${_so}")
+      endif()
+    endforeach()
+    unset(_havel_plugin_sos)
+  endif()
+  # Remove after the loop, never during: removing a file that is still
+  # referenced would fail mid-enumeration on some platforms.
+  if(HAVEL_MODULE_PLUGIN_PRUNE_LIST)
+    file(REMOVE ${HAVEL_MODULE_PLUGIN_PRUNE_LIST})
+    foreach(_p ${HAVEL_MODULE_PLUGIN_PRUNE_LIST})
+      cmake_path(GET _p FILENAME _p_name)
+      message(STATUS "pruned orphan module plugin: ${_p_name} (no target configured in this build)")
+    endforeach()
+  endif()
 endif()
 
 # Export symbols from main executable so plugins can resolve them
@@ -3546,6 +3612,149 @@ if(ENABLE_TESTS AND GTest_FOUND)
     )
     add_test(NAME io_key_parse_test COMMAND io_key_parse_test)
 
+    # havel::ModifierMasks and IO::ParseModifiersAndFlags - ONE modifier bit
+    # layout for every backend.
+    #
+    # The defect: the non-evdev branch of ParseModifiersAndFlags() produced
+    # ModifierMasks (SHIFT on bit 0, CONTROL on bit 1), while the evdev
+    # branch produced the bits inline (ctrl on bit 0, shift on bit 1) - and
+    # the hotkey matchers read the evdev layout. On the X11 path the two
+    # layouts disagreed, so a Ctrl hotkey was matched as if it required
+    # Shift, and a Shift hotkey as if it required Ctrl.
+    add_executable(io_modifier_layout_test
+        tests/io_modifier_layout_ut.cpp
+    )
+    target_include_directories(io_modifier_layout_test PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_SOURCE_DIR}/src/havel-lang
+        ${CMAKE_SOURCE_DIR}/src/include
+        ${CMAKE_SOURCE_DIR}/include
+    )
+    target_compile_features(io_modifier_layout_test PRIVATE cxx_std_23)
+    target_link_libraries(io_modifier_layout_test PRIVATE
+        GTest::gtest GTest::gtest_main
+        ${HAVEL_LINK_GROUP_BEGIN} havel_runtime havel_compiler havel_core ${HAVEL_LINK_GROUP_END}
+        ${HAVEL_LINK_GROUP_BEGIN}
+        ${COMMON_LIBS}
+        $<$<BOOL:${ENABLE_LLVM}>:${LLVM_LIBS}>
+        ${HAVEL_LINK_GROUP_END}
+    )
+    add_test(NAME io_modifier_layout_test COMMAND io_modifier_layout_test)
+
+    # IO::selectGrabsToRetry - the rule that picks which hotkeys get their
+    # OS-level key grab re-attempted. A failed X11 grab (BadAccess: another
+    # X client owns the key, or holds an active keyboard grab) used to be
+    # swallowed: IO::GrabHotkey discarded the grab result and reported
+    # success, so the binding looked armed while the X server held no grab
+    # for it, and nothing ever retried it. The hotkey then stayed dead for
+    # the rest of the process lifetime.
+    add_executable(io_hotkey_grab_retry_test
+        tests/io_hotkey_grab_retry_ut.cpp
+    )
+    target_include_directories(io_hotkey_grab_retry_test PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_SOURCE_DIR}/src/havel-lang
+        ${CMAKE_SOURCE_DIR}/src/include
+        ${CMAKE_SOURCE_DIR}/include
+    )
+    target_compile_features(io_hotkey_grab_retry_test PRIVATE cxx_std_23)
+    target_link_libraries(io_hotkey_grab_retry_test PRIVATE
+        GTest::gtest GTest::gtest_main
+        ${HAVEL_LINK_GROUP_BEGIN} havel_runtime havel_compiler havel_core ${HAVEL_LINK_GROUP_END}
+        ${HAVEL_LINK_GROUP_BEGIN}
+        ${COMMON_LIBS}
+        $<$<BOOL:${ENABLE_LLVM}>:${LLVM_LIBS}>
+        ${HAVEL_LINK_GROUP_END}
+    )
+    add_test(NAME io_hotkey_grab_retry_test COMMAND io_hotkey_grab_retry_test)
+
+    # havel::GrabMaskVariants - the rule that decides which X11 modifier
+    # masks a hotkey is grabbed under. The lock bits (CapsLock / NumLock)
+    # were OR-ed into the base mask by ToPlatformMask() and the variant
+    # expansion was applied on top, so the "no lock modifier" variant was
+    # unreachable: it was never grabbed, never ungrabbed, and the removed
+    # hotkey left a stale grab on the X server that kept stealing the key
+    # from every other application.
+    add_executable(io_x11_grab_mask_variants_test
+        tests/io_x11_grab_mask_variants_ut.cpp
+    )
+    target_include_directories(io_x11_grab_mask_variants_test PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_SOURCE_DIR}/src/havel-lang
+        ${CMAKE_SOURCE_DIR}/src/include
+        ${CMAKE_SOURCE_DIR}/include
+    )
+    target_compile_features(io_x11_grab_mask_variants_test PRIVATE cxx_std_23)
+    target_link_libraries(io_x11_grab_mask_variants_test PRIVATE
+        GTest::gtest GTest::gtest_main
+        ${HAVEL_LINK_GROUP_BEGIN} havel_runtime havel_compiler havel_core ${HAVEL_LINK_GROUP_END}
+        ${HAVEL_LINK_GROUP_BEGIN}
+        ${COMMON_LIBS}
+        $<$<BOOL:${ENABLE_LLVM}>:${LLVM_LIBS}>
+        ${HAVEL_LINK_GROUP_END}
+    )
+    add_test(NAME io_x11_grab_mask_variants_test COMMAND io_x11_grab_mask_variants_test)
+
+    # havel::X11StateToAbstractMask - the conversion from an X11 event state
+    # to the platform-neutral ModifierMasks layout.
+    #
+    # The defect: the (now removed) X11HotkeyMonitor compared the X11 event
+    # state DIRECTLY against hotkey.modifiers. The X11 state uses the
+    # server's modifier bits (Shift=0, Lock=1, Control=2, Mod1=3) while
+    # ModifierMasks uses the evdev bits (Ctrl=0, Shift=1, Alt=2, Meta=3).
+    # The layouts are not interchangeable, so such a comparison could never
+    # match a hotkey that carries a modifier.
+    #
+    # The conversion now lives in one shared function used by every X11
+    # consumer, so the layouts cannot drift apart again.
+    add_executable(io_x11_state_mask_test
+        tests/io_x11_state_mask_ut.cpp
+    )
+    target_include_directories(io_x11_state_mask_test PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_SOURCE_DIR}/src/havel-lang
+        ${CMAKE_SOURCE_DIR}/src/include
+        ${CMAKE_SOURCE_DIR}/include
+    )
+    target_compile_features(io_x11_state_mask_test PRIVATE cxx_std_23)
+    target_link_libraries(io_x11_state_mask_test PRIVATE
+        GTest::gtest GTest::gtest_main
+        ${HAVEL_LINK_GROUP_BEGIN} havel_runtime havel_compiler havel_core ${HAVEL_LINK_GROUP_END}
+        ${HAVEL_LINK_GROUP_BEGIN}
+        ${COMMON_LIBS}
+        $<$<BOOL:${ENABLE_LLVM}>:${LLVM_LIBS}>
+        ${HAVEL_LINK_GROUP_END}
+    )
+    add_test(NAME io_x11_state_mask_test COMMAND io_x11_state_mask_test)
+
+    # havel::ShouldRetrySelectInput - the rule that decides whether the X11
+    # adapter re-requests the root window event subscription. The X server
+    # refuses XSelectInput on the root window (BadAccess) while another
+    # client holds an active keyboard or pointer grab, and the refusal
+    # means the client receives no key events at all. The cause is
+    # transient, but the adapter used to ask once in Init() and never
+    # again, so one refusal at startup left the process deaf for its whole
+    # lifetime.
+    add_executable(io_x11_select_input_retry_test
+        tests/io_x11_select_input_retry_ut.cpp
+    )
+    target_include_directories(io_x11_select_input_retry_test PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_SOURCE_DIR}/src/havel-lang
+        ${CMAKE_SOURCE_DIR}/src/include
+        ${CMAKE_SOURCE_DIR}/include
+    )
+    target_compile_features(io_x11_select_input_retry_test PRIVATE cxx_std_23)
+    target_link_libraries(io_x11_select_input_retry_test PRIVATE
+        GTest::gtest GTest::gtest_main
+        ${HAVEL_LINK_GROUP_BEGIN} havel_runtime havel_compiler havel_core ${HAVEL_LINK_GROUP_END}
+        ${HAVEL_LINK_GROUP_BEGIN}
+        ${COMMON_LIBS}
+        $<$<BOOL:${ENABLE_LLVM}>:${LLVM_LIBS}>
+        ${HAVEL_LINK_GROUP_END}
+    )
+    add_test(NAME io_x11_select_input_retry_test COMMAND io_x11_select_input_retry_test)
+
     # Drift guard for the three token-name registries: TokenType enum ->
     # TOKEN_TYPE_NAMES (TokenTypeNames.hpp) -> TID map (modules/lang/
     # lexer.hv). _nativeTokenize falls back to "Unknown" for an enum member
@@ -3564,6 +3773,51 @@ if(ENABLE_TESTS AND GTest_FOUND)
     target_compile_features(token_type_names_drift_test PRIVATE cxx_std_23)
     target_link_libraries(token_type_names_drift_test PRIVATE GTest::gtest GTest::gtest_main)
     add_test(NAME token_type_names_drift_test COMMAND token_type_names_drift_test)
+
+    # Bytecode-cache source identity: the writer must stamp the text it
+    # compiled, and the reader must report WHY it refused an entry. A
+    # source-identity mismatch used to be reported as "entry-unreadable",
+    # which points at an IO problem that is not there.
+    add_executable(bytecode_cache_identity_test
+        tests/bytecode_cache_identity_ut.cpp
+    )
+    target_include_directories(bytecode_cache_identity_test PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_SOURCE_DIR}/src/havel-lang
+        ${CMAKE_SOURCE_DIR}/src/havel-lang/compiler/core
+        ${CMAKE_SOURCE_DIR}/src/havel-lang/compiler/runtime
+        ${CMAKE_SOURCE_DIR}/src/havel-lang/runtime
+        ${CMAKE_SOURCE_DIR}/include
+    )
+    target_compile_features(bytecode_cache_identity_test PRIVATE cxx_std_23)
+    target_link_libraries(bytecode_cache_identity_test PRIVATE
+        GTest::gtest GTest::gtest_main
+        ${HAVEL_LINK_GROUP_BEGIN} havel_runtime havel_compiler havel_core ${HAVEL_LINK_GROUP_END}
+        ${HAVEL_LINK_GROUP_BEGIN}
+        ${COMMON_LIBS}
+        ${HAVEL_LINK_GROUP_END}
+    )
+    add_test(NAME bytecode_cache_identity_test COMMAND bytecode_cache_identity_test)
+
+    # The script-source join rule. The launcher used to append a newline to
+    # EVERY file it read, so a single script's compiled text was one byte
+    # longer than the file on disk - and the bytecode cache validates an
+    # entry against the exact text it would compile, so the entry the
+    # compile wrote could never be served. The rule lives in one header so
+    # the launcher and this test cannot drift apart.
+    add_executable(script_source_join_test
+        tests/script_source_join_ut.cpp
+    )
+    target_include_directories(script_source_join_test PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_SOURCE_DIR}/src/core/init
+        ${CMAKE_SOURCE_DIR}/include
+    )
+    target_compile_features(script_source_join_test PRIVATE cxx_std_23)
+    target_link_libraries(script_source_join_test PRIVATE
+        GTest::gtest GTest::gtest_main
+    )
+    add_test(NAME script_source_join_test COMMAND script_source_join_test)
 
     # Screen-provider seam behind PixelAutomation. This test deliberately does
     # NOT link havel_gui: the whole point of the extraction is that the core
@@ -3677,6 +3931,31 @@ if(ENABLE_TESTS AND GTest_FOUND)
         ${HAVEL_LINK_GROUP_END}
     )
     add_test(NAME clipboard_backend_test COMMAND clipboard_backend_test)
+
+    # UI-backend shutdown path. The launcher's shutdown callback used to
+    # call the pure-virtual quitEventLoop through a possibly-null backend,
+    # which aborted the process with "pure virtual method called" while
+    # tearing down after a script error. This drives the production helper
+    # (quitEventLoopIfAlive) that the callback now uses.
+    add_executable(ui_backend_shutdown_test
+        tests/ui_backend_shutdown_ut.cpp
+    )
+    target_compile_features(ui_backend_shutdown_test PRIVATE cxx_std_23)
+    target_include_directories(ui_backend_shutdown_test PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_SOURCE_DIR}/src/havel-lang
+        ${CMAKE_SOURCE_DIR}/src/include
+        ${CMAKE_SOURCE_DIR}/include
+    )
+    target_link_libraries(ui_backend_shutdown_test PRIVATE
+        GTest::gtest GTest::gtest_main
+        ${HAVEL_LINK_GROUP_BEGIN} havel_runtime havel_compiler havel_core ${HAVEL_LINK_GROUP_END}
+        ${HAVEL_LINK_GROUP_BEGIN}
+        ${COMMON_LIBS}
+        $<$<BOOL:${ENABLE_LLVM}>:${LLVM_LIBS}>
+        ${HAVEL_LINK_GROUP_END}
+    )
+    add_test(NAME ui_backend_shutdown_test COMMAND ui_backend_shutdown_test)
 endif()
 
 # ==============================================================================

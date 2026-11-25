@@ -24,6 +24,7 @@
 #include <filesystem>
 #include <fstream>
 #include <optional>
+#include <set>
 #include <string>
 #include <string_view>
 #include <type_traits>
@@ -1200,13 +1201,24 @@ public:
   void compileFunction(const BytecodeFunction &func) override {
     last_name = func.name;
     compiled_count++;
+    // A successful compile registers the function. The adapter reports a
+    // compile as a refusal when isCompiled() does not answer for the
+    // function it was handed - that is the contract that keeps a failed
+    // JIT compile from being marked as jit_compiled (see Backend.hpp:
+    // compileFunctionTier). A stub that never registers anything would
+    // therefore make every compile look like a failure, which is a
+    // different thing than what this test is about.
+    compiled.insert(func.name);
   }
   Value executeCompiled(VM *, const std::string &, const std::vector<Value> &) override {
     return Value::makeNull();
   }
-  bool isCompiled(const std::string &func_name) const override { return func_name == "hot_one"; }
+  bool isCompiled(const std::string &func_name) const override {
+    return compiled.count(func_name) != 0 || func_name == "hot_one";
+  }
   std::string last_name;
   int compiled_count = 0;
+  std::set<std::string> compiled;
 };
 } // namespace
 

@@ -1,0 +1,31 @@
+// unknown_member_returns_null.hv — an unknown member on a module namespace
+// resolves to null instead of raising an error.
+//
+// What this tests: the CURRENT (undesirable) behaviour, pinned so the
+// eventual fix has something to change. window.getPid() has never been a
+// host function — the documented API is window.pid — so this call must
+// resolve to nothing.
+//
+// Why it is NOT a smoke test: it asserts a defect, not correct
+// behaviour. When the language is changed to raise on an unknown module
+// member, this script's expectation flips and it should move into the
+// smoke suite as a regression test for the NEW behaviour.
+//
+// Expected result: pid is null, no error is raised, and the downstream
+// consumer of that null is what fails:
+//
+//     process.sendSignal(pid, process.SIGKILL)
+//     -> __proc.kill() requires a number PID
+//
+// That downstream error names the consumer, not the typo, which is the
+// whole problem this documents.
+//
+// Related: docs/known-issues/unknown-member-silently-null.md
+
+pid = window.getPid()
+print("pid is: $pid")
+if pid == nil {
+  print("CONFIRMED: unknown member resolved to null without an error")
+} else {
+  print("CHANGED: unknown member now raises or returns non-null")
+}

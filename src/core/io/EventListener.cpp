@@ -390,8 +390,6 @@ void EventListener::Stop() {
   if (signalHandler) {
     signalHandler->Shutdown();
   }
-
-  StopX11Monitor();
 }
 
 bool EventListener::SetupUinput() {
@@ -583,41 +581,6 @@ void EventListener::SetAnyKeyPressCallback(AnyKeyPressCallback callback) {
   this->anyKeyPressCallback = callback;
 }
 
-#ifdef __linux__
-bool EventListener::StartX11Monitor(Display *display) {
-  if (!display) {
-    error("Cannot start X11 monitor: display is null");
-    return false;
-  }
-
-  if (!x11Monitor) {
-    x11Monitor = std::make_unique<X11HotkeyMonitor>();
-  }
-
-  // Register all current hotkeys with X11 monitor
-  {
-    std::unique_lock<std::shared_mutex> lock(hotkeyMutex);
-    std::lock_guard<std::mutex> ioLock(HotkeyManager::RegisteredHotkeysMutex());
-    for (const auto &[id, hotkey] : HotkeyManager::RegisteredHotkeys()) {
-      if (!hotkey.evdev) { // Only X11 hotkeys
-        x11Monitor->RegisterHotkey(id, hotkey);
-      }
-    }
-  }
-
-  return x11Monitor->Start(display);
-}
-
-void EventListener::StopX11Monitor() {
-  if (x11Monitor) {
-    x11Monitor->Stop();
-  }
-}
-
-bool EventListener::IsX11MonitorRunning() const {
-  return x11Monitor && x11Monitor->IsRunning();
-}
-#endif
 int EventListener::GetCurrentModifiersMask() const {
   // This is called with stateMutex already locked
   int mask = 0;
@@ -722,12 +685,22 @@ void EventListener::PollRound(int timeoutMs) {
 
   if (pfds.empty()) {
     std::this_thread::sleep_for(std::chrono::milliseconds(timeoutMs));
+    if (backend_)
+      backend_->Poll();
     return;
   }
 
   int ret = poll(pfds.data(), pfds.size(), timeoutMs);
-  if (ret <= 0)
+  if (ret <= 0) {
+    // A timeout (or a signal interrupt) still has to give the backend its
+    // maintenance turn: the X11 adapter recovers the root window event
+    // subscription here, and a subscription the X server refused would
+    // otherwise never be re-requested - the poll never reports the X
+    // connection ready, because no event ever arrives on it.
+    if (backend_)
+      backend_->Poll();
     return;
+  }
 
   // Shutdown fd: drain and let the caller observe shutdown flag.
   if (shutdownIdx >= 0 && (pfds[shutdownIdx].revents & POLLIN)) {
@@ -808,6 +781,11 @@ void EventListener::PollRound(int timeoutMs) {
     if (!readyInput.empty())
       backend_->OnFdsReady(readyInput);
   }
+
+  // Backend maintenance: recover state that another client can take away
+  // (the X11 root window event subscription, for instance).
+  if (backend_)
+    backend_->Poll();
 }
 
 void EventListener::EventLoop() {
@@ -1891,10 +1869,11 @@ void EventListener::UpdateModifierState(int evdevCode, bool down) {
 bool EventListener::CheckModifierMatch(int requiredModifiers, bool wildcard) const {
   // This is called with stateMutex already locked
 
-  bool ctrlRequired = (requiredModifiers & (1 << 0)) != 0;
-  bool shiftRequired = (requiredModifiers & (1 << 1)) != 0;
-  bool altRequired = (requiredModifiers & (1 << 2)) != 0;
-  bool metaRequired = (requiredModifiers & (1 << 3)) != 0;
+  // ModifierMasks layout - see IOBackend.hpp.
+  bool ctrlRequired = (requiredModifiers & ModifierMasks::CONTROL) != 0;
+  bool shiftRequired = (requiredModifiers & ModifierMasks::SHIFT) != 0;
+  bool altRequired = (requiredModifiers & ModifierMasks::ALT) != 0;
+  bool metaRequired = (requiredModifiers & ModifierMasks::META) != 0;
 
   bool ctrlPressed = modifierState.IsCtrlPressed();
   bool shiftPressed = modifierState.IsShiftPressed();
@@ -1918,10 +1897,11 @@ bool EventListener::CheckModifierMatchExcludingModifier(int requiredModifiers, b
   // We need to check modifiers while excluding the remapped-to modifier
   // This is called with stateMutex already locked
 
-  bool ctrlRequired = (requiredModifiers & (1 << 0)) != 0;
-  bool shiftRequired = (requiredModifiers & (1 << 1)) != 0;
-  bool altRequired = (requiredModifiers & (1 << 2)) != 0;
-  bool metaRequired = (requiredModifiers & (1 << 3)) != 0;
+  // ModifierMasks layout - see IOBackend.hpp.
+  bool ctrlRequired = (requiredModifiers & ModifierMasks::CONTROL) != 0;
+  bool shiftRequired = (requiredModifiers & ModifierMasks::SHIFT) != 0;
+  bool altRequired = (requiredModifiers & ModifierMasks::ALT) != 0;
+  bool metaRequired = (requiredModifiers & ModifierMasks::META) != 0;
 
   // Get the current modifier state, but exclude the remapped-to modifier
   bool ctrlPressed = modifierState.IsCtrlPressed();

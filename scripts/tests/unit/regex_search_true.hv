@@ -1,7 +1,12 @@
 // smoke: regex-search-true = 1
 use regex
-// regex_search takes (text, pattern) -- reversed from regex_match
-val __result = regex_search("hello world", "wor") ? 1 : 0
+// regex_search takes (pattern, text), like regex_match. The module used
+// to read them in the opposite order; that was a bug (every natural
+// (pattern, text) caller got inverted results) and was fixed. This test
+// was written around the old order, so it only compiled - and only
+// "passed" the inverted expectation - because this directory was never
+// wired into a runner.
+val __result = regex_search("wor", "hello world") ? 1 : 0
 if __result != 1 {
  print("FAIL regex-search-true: expected 1, got " + str(__result))
  process.exit(255)

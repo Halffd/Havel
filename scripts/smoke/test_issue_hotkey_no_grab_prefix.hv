@@ -1,0 +1,87 @@
+// Regression: a '~' (no-grab) hotkey registration must NOT take an
+// OS-level key grab.
+//
+// Mechanism (src/host/module/bridges/InputBridge.cpp, before the fix):
+//
+//   ctx->hotkeyManager->SetHotkeyGrabById(osId, true);
+//
+// handleHotkeyRegister established an X11 grab for EVERY unconditional
+// hotkey.register() call, unconditionally. The '~' prefix is the
+// documented way to say "this key must stay with other applications" -
+// it is used widely in the project's own scripts (scripts/user/
+// hotkeys0.3.hv uses ~^Down, ~!Tab, ~LButton, ~w, ...).
+//
+// IO::AddHotkey stores the registration's parsed intent in
+// HotKey::grab (ParsedHotkey::grab defaults to true and is set to false
+// by the '~' prefix). The unconditional SetHotkeyGrabById(osId, true)
+// overwrote that intent and grabbed the key anyway, so a script that
+// explicitly asked NOT to grab the key silently took the key away from
+// every other application.
+//
+// What this test locks:
+//   1. hotkey.register("~F23", ...) reports grab == false.
+//   2. hotkey.register("F24", ...) reports grab == true (the normal
+//      case must keep working).
+//   3. The two bindings differ: '~' must not be treated as a no-op.
+//
+// F23/F24 are never pressed by the user and the test never triggers
+// them; it only inspects the registered state. Headless-safe: with no
+// X server the OS grab cannot be established either way, so the test
+// asserts the REQUESTED state (the `grab` field), not the OS state.
+
+use "process"
+
+failures = 0
+
+fn check(name, cond) {
+    if cond {
+        print("PASS " + name)
+    } else {
+        print("FAIL " + name)
+        failures = failures + 1
+    }
+}
+
+fn findByAlias(name) {
+    for hk in hotkey.list() {
+        if hk.alias == name {
+            return hk
+        }
+    }
+    nil
+}
+
+// 1. The '~' prefix: must NOT grab.
+noGrab = hotkey.register("~F23", () => {})
+noGrabEntry = findByAlias("~F23")
+if noGrabEntry == nil {
+    print("FAIL '~F23' was not registered")
+    failures = failures + 1
+} else {
+    check("'~F23' is registered", true)
+    check("'~F23' does not request a grab (grab == false)", noGrabEntry.grab == false)
+}
+
+// 2. The normal case: must grab.
+normal = hotkey.register("F24", () => {})
+normalEntry = findByAlias("F24")
+if normalEntry == nil {
+    print("FAIL 'F24' was not registered")
+    failures = failures + 1
+} else {
+    check("'F24' is registered", true)
+    check("'F24' requests a grab (grab == true)", normalEntry.grab == true)
+}
+
+// 3. The '~' prefix must actually change something.
+if noGrabEntry != nil && normalEntry != nil {
+    check("'~' changes the grab request (F23 != F24)", noGrabEntry.grab != normalEntry.grab)
+}
+
+if failures > 0 {
+    print("FAIL hotkey_no_grab_prefix: " + failures + " check(s) failed")
+    process.exit(1)
+}
+print("PASS hotkey_no_grab_prefix")
+// Persistent hotkey goroutines keep the process alive; exit explicitly.
+process.exit(0)

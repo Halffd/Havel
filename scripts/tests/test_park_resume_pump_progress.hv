@@ -1,0 +1,54 @@
+// Regression: a goroutine parked on a fiber-suspending host call
+// (window.active -> runBlocking -> EXTERNAL wait) must keep making
+// progress while the pump idles between ticks.
+//
+// what: go fn ticker() sleeps 50ms and counts; go fn poller() calls
+//   window.active() in a loop (each call parks the goroutine on an
+//   EXTERNAL wait) and counts. After 1.5s both counters are read.
+// why: hasPendingWork() only checked runnable fibers, deferred actions
+//   and DUE sleepers. A goroutine parked on an EXTERNAL wait is none of
+//   those — and the tick that would drain its ASYNC_HOST_COMPLETE event
+//   was skipped by the idle probe, so the completion event sat in the
+//   queue and the goroutine never woke. Observed in the user's hotkey
+//   config: update() (window.active loop) froze; every other parked
+//   goroutine froze; interval timers (EventQueue-driven) kept running;
+//   hotkeys kept firing. Fix: hasPendingWork also reports event-driven
+//   awaiters and pending queue events, and tickGoroutines/tickScheduler
+//   sweep abandoned completions.
+// expected: ticks > 0, polls > 0, PASS. Before the fix: polls stalls at
+//   0-1 while ticks advance (or both stall once the poller parks), FAIL.
+// Runs headless: window.active() on the null-display path returns a
+// null/info-valid=false object through the same park/resume machinery,
+// which is exactly the machinery under test.
+
+ticks = 0
+polls = 0
+
+go fn ticker() {
+  loop {
+    sleep(50)
+    ticks = ticks + 1
+  }
+}
+
+go fn poller() {
+  loop {
+    w = window.active()
+    polls = polls + 1
+    sleep(10)
+  }
+}
+
+sleep(1500)
+
+print("ticks: $ticks polls: $polls")
+if ticks < 10 {
+  print("FAIL: ticker goroutine starved (ticks=$ticks, expected >= 10)")
+  exit(1)
+}
+if polls < 10 {
+  print("FAIL: poller goroutine starved (polls=$polls, expected >= 10)")
+  exit(1)
+}
+print("PASS: park/resume pump progress (ticks=$ticks polls=$polls)")
+exit(0)

@@ -659,7 +659,11 @@ static fs::path toolchain_dir(const std::string &commit) {
 // list, so a new runtime .so is picked up without editing this file.
 static void copy_runtime_libs(const fs::path &bin, const fs::path &source_dir) {
   std::string out;
-  if (run_capture("ldd '" + bin.string() + "'", &out) != 0) return;
+  if (run_capture("ldd '" + bin.string() + "'", &out) != 0) {
+    std::cerr << "hpkg: warning: ldd failed on " << bin.string()
+              << "; toolchain may miss runtime .so files" << std::endl;
+    return;
+  }
   std::istringstream lines(out);
   std::string line;
   std::error_code ec;
@@ -669,13 +673,23 @@ static void copy_runtime_libs(const fs::path &bin, const fs::path &source_dir) {
     std::string name = trim(line.substr(0, arrow));
     if (name.empty()) continue;
     // Search the source build dir and its toolkits/ subdir for the library.
+    bool copied = false;
     for (const fs::path &dir : {source_dir, source_dir / "toolkits"}) {
       fs::path candidate = dir / name;
       if (fs::exists(candidate)) {
         fs::copy_file(candidate, bin.parent_path() / name,
                       fs::copy_options::overwrite_existing, ec);
+        copied = true;
         break;
       }
+    }
+    if (!copied) {
+      // Missing at install time = dead toolchain on first run. Say so now
+      // instead of leaving the user to decode a loader error later.
+      std::cerr << "hpkg: warning: runtime lib '" << name
+                << "' not found under " << source_dir.string()
+                << " - '" << bin.filename().string() << "' will fail to start"
+                << std::endl;
     }
   }
 }
@@ -860,13 +874,19 @@ static int cmd_toolchain(const std::vector<std::string> &args) {
         fs::remove_all(dir, ec);
         return 1;
       }
-      copy_runtime_libs(dir / "havel", wt / "build-debug");
+      // Copy the binaries FIRST: copy_runtime_libs derives the .so set by
+      // running ldd on the toolchain's own copy of `havel`. It ran on
+      // dir/"havel" before that file existed, ldd failed, and the function
+      // returned silently - the install produced a binary with no runtime
+      // libs (loader error 127 on first run). Same order as the copied path
+      // above (binary copy at :796 precedes its copy_runtime_libs at :815).
       for (const char *name : {"havel", "hvtest"}) {
         fs::path src = wt / "build-debug" / name;
         if (fs::exists(src)) {
           fs::copy_file(src, dir / name, fs::copy_options::overwrite_existing, ec);
         }
       }
+      copy_runtime_libs(dir / "havel", wt / "build-debug");
       tc.mode = "built";
       tc.origin = repo.string();
       run_capture("git -C '" + repo.string() + "' worktree remove --force '" + wt.string() + "'",
@@ -1107,14 +1127,28 @@ static int cmd_toolchain(const std::vector<std::string> &args) {
   // -------------------------------------------------------------------- run
   if (sub == "run") {
     if (rest.empty()) {
-      std::cerr << "hpkg toolchain run: specify a ref" << std::endl;
+      std::cerr << "hpkg toolchain run: specify a ref or a command "
+                << "(with no ref, the current toolchain runs the args)"
+                << std::endl;
       return 1;
     }
     fs::path root = get_toolchains_dir();
+    // First arg is a toolchain ref only if it resolves to an installed one.
+    // Anything else (a script path, -flags, ...) means "run with the
+    // current toolchain" - `hpkg toolchain run ./script.hv` is the natural
+    // spelling, and treating the path as a ref name produced the absurd
+    // "not installed: /home/.../script.hv".
     std::string commit = resolve_installed(root, rest[0]);
+    size_t arg_start = 1;
     if (commit.empty()) {
-      std::cerr << "hpkg toolchain run: not installed: " << rest[0] << std::endl;
-      return 1;
+      commit = resolve_installed(root, selected_toolchain());
+      arg_start = 0;
+      if (commit.empty()) {
+        std::cerr << "hpkg toolchain run: '" << rest[0]
+                  << "' is not an installed toolchain and no default is set"
+                  << std::endl;
+        return 1;
+      }
     }
     fs::path bin = toolchain_dir(commit) / "havel";
     if (!fs::exists(bin)) {
@@ -1122,7 +1156,7 @@ static int cmd_toolchain(const std::vector<std::string> &args) {
       return 1;
     }
     std::string argv_line = "'" + bin.string() + "'";
-    for (size_t i = 1; i < rest.size(); ++i)
+    for (size_t i = arg_start; i < rest.size(); ++i)
       argv_line += " '" + rest[i] + "'";
     int rc = run_capture(argv_line, nullptr);
     return rc < 0 ? 1 : rc;

@@ -1084,20 +1084,16 @@ Parser::parsePrattExpression(int rbp, std::unique_ptr<ast::Expression> left) {
   // This handles function calls without parentheses like: print "hello"
   // Also handles: print a ** 5 -> print(a ** 5)
   // Also handles prefix operators: print @id, print !x, print #x
-  if (context.allowBraceSugar &&
-      (at().type == TokenType::String || at().type == TokenType::MultilineString ||
-       at().type == TokenType::RegexString || at().type == TokenType::Number ||
-       at().type == TokenType::Identifier || at().type == TokenType::InterpolatedString ||
-       at().type == TokenType::InterpolatedBacktick || at().type == TokenType::At ||
-       at().type == TokenType::AtAt || at().type == TokenType::Not ||
-       at().type == TokenType::Length)) {
+  if (context.allowBraceSugar && canStartImplicitCallArgument(at().type)) {
     Token arg_token = at();
-    // Parse argument as full expression (with operators), but disable nested implicit calls
-    // to prevent infinite recursion and ensure operators like ** bind tighter than the call
-    bool prevAllow = context.allowBraceSugar;
-    context.allowBraceSugar = false;
+    // Parse argument as full expression (with operators). Nested implicit
+    // calls stay ENABLED so `print replace "a", "b"` parses as
+    // print(replace("a", "b")) - the inner call has to be recognised before
+    // the comma can be read as an argument separator. The sugar is
+    // right-associating (an argument binds tighter than its caller), so the
+    // recursion terminates on the token stream; the parser's depth guard
+    // bounds it.
     auto arg = parsePrattExpression(0);
-    context.allowBraceSugar = prevAllow;
 
     if (!arg) {
       return nullptr;
@@ -1132,6 +1128,14 @@ Parser::parsePrattExpression(int rbp, std::unique_ptr<ast::Expression> left) {
 std::unique_ptr<ast::Expression> Parser::nud(const Token &token) {
   if (debug.parser) {
     havel::debug("PRATT: nud for {}", token.toString());
+  }
+
+  // Allow certain keywords to be used as identifiers in expression context.
+  // This enables expressions like: mode == "work" && class == "code". The
+  // set lives in keywordUsableAsIdentifier() (Parser.h) so the
+  // implicit-call argument check derives from the same list.
+  if (keywordUsableAsIdentifier(token.type)) {
+    return makeIdentifier(token);
   }
 
   switch (token.type) {
@@ -1249,17 +1253,6 @@ std::unique_ptr<ast::Expression> Parser::nud(const Token &token) {
     }
     failAt(token, "Unexpected ':' in expression");
   }
-
-  // Allow certain keywords to be used as identifiers in expression context
-  // This enables expressions like: mode == "work" && class == "code"
-  case TokenType::Class:
-  case TokenType::Struct:
-  case TokenType::Enum:
-  case TokenType::Mode:
-  case TokenType::Val:
-  case TokenType::Const:
-  case TokenType::Let:
-    return makeIdentifier(token);
 
   case TokenType::True:
     return makeNodeAt<ast::BooleanLiteral>(token, true);
@@ -1402,8 +1395,10 @@ std::unique_ptr<ast::Expression> Parser::nud(const Token &token) {
     // a set; '{}' stays an empty object.
     {
       auto lambdaBody = parseBlockStatement();
-      return makeNodeAt<ast::LambdaExpression>(
+      auto _lam = makeNodeAt<ast::LambdaExpression>(
           token, std::vector<std::unique_ptr<ast::FunctionParameter>>(), std::move(lambdaBody));
+      ast::setLambdaContainsYield(*_lam);
+      return _lam;
     }
   }
 
@@ -1637,8 +1632,14 @@ std::unique_ptr<ast::Expression> Parser::nud(const Token &token) {
     std::unique_ptr<ast::Expression> cmdExpr;
     if (at().type == TokenType::OpenParen || at().type == TokenType::OpenBracket) {
       cmdExpr = parseExpression();
-    } else if (at().type == TokenType::Identifier || at().type == TokenType::String ||
-               at().type == TokenType::MultilineString) {
+    } else if (at().type == TokenType::Identifier) {
+      // A bare identifier names the COMMAND to run, not a variable holding
+      // one - the same rule the statement form uses. `$! var` (a variable
+      // holding a command) is still reachable through the explicit
+      // `$! (var)` form.
+      cmdExpr = makeNodeAt<ast::StringLiteral>(at(), at().value, false);
+      advance(); // consume the identifier
+    } else if (at().type == TokenType::String || at().type == TokenType::MultilineString) {
       cmdExpr = parsePrimaryExpression();
     } else {
       failAt(token, "Shell command requires expression: $ (cmd), $! [array], or $! var");
@@ -2507,7 +2508,11 @@ std::unique_ptr<ast::Expression> Parser::led(const Token &token,
     params.push_back(makeNodeAt<ast::FunctionParameter>(token, std::move(ident), std::nullopt,
                                                         std::nullopt, false));
 
-    return makeNodeAt<ast::LambdaExpression>(token, std::move(params), std::move(body));
+    std::unique_ptr<ast::LambdaExpression> _lam = makeNodeAt<ast::LambdaExpression>(token, std::move(params), std::move(body));
+
+    ast::setLambdaContainsYield(*_lam);
+
+    return _lam;
   }
 
   default:
@@ -2537,7 +2542,9 @@ std::unique_ptr<ast::Expression> Parser::parseParenthesizedExpression() {
       block->body.push_back(makeNode<ast::ExpressionStatement>(std::move(bodyExpr)));
       body = std::move(block);
     }
-    return makeNode<ast::LambdaExpression>(std::move(params), std::move(body));
+    std::unique_ptr<ast::LambdaExpression> _lam = makeNode<ast::LambdaExpression>(std::move(params), std::move(body));
+    ast::setLambdaContainsYield(*_lam);
+    return _lam;
   }
 
   // Check if this is a multi-parameter lambda: (a, b, c) => body
@@ -2584,7 +2591,9 @@ std::unique_ptr<ast::Expression> Parser::parseParenthesizedExpression() {
       block->body.push_back(makeNode<ast::ExpressionStatement>(std::move(bodyExpr)));
       body = std::move(block);
     }
-    return makeNode<ast::LambdaExpression>(std::move(lambdaParams), std::move(body));
+    std::unique_ptr<ast::LambdaExpression> _lam = makeNode<ast::LambdaExpression>(std::move(lambdaParams), std::move(body));
+    ast::setLambdaContainsYield(*_lam);
+    return _lam;
   }
 
   // Not a multi-param lambda, restore position and parse normally
@@ -2637,7 +2646,9 @@ std::unique_ptr<ast::Expression> Parser::parseParenthesizedExpression() {
   if (isBraceLambda) {
     // Parse lambda body as block (parseBlockStatement expects to see '{')
     std::unique_ptr<ast::Statement> body = parseBlockStatement();
-    return makeNode<ast::LambdaExpression>(std::move(braceLambdaParams), std::move(body));
+    std::unique_ptr<ast::LambdaExpression> _lam = makeNode<ast::LambdaExpression>(std::move(braceLambdaParams), std::move(body));
+    ast::setLambdaContainsYield(*_lam);
+    return _lam;
   }
 
   // Not a brace lambda, restore position and parse normally
@@ -2747,7 +2758,11 @@ std::unique_ptr<ast::Expression> Parser::parseLambdaExpression() {
     body->body.push_back(std::move(stmt));
   }
 
-  return makeNode<ast::LambdaExpression>(std::move(params), std::move(body));
+  std::unique_ptr<ast::LambdaExpression> _lam = makeNode<ast::LambdaExpression>(std::move(params), std::move(body));
+
+  ast::setLambdaContainsYield(*_lam);
+
+  return _lam;
 }
 
 // Replace the old parseExpression with a wrapper that calls Pratt parser
@@ -3575,6 +3590,7 @@ std::unique_ptr<havel::ast::Statement> Parser::parseStatement() {
       auto body = parseBlockStatement();
       auto lambda = makeNodeAt<havel::ast::LambdaExpression>(kw);
       lambda->body = std::move(body);
+      ast::setLambdaContainsYield(*lambda);
       std::vector<std::unique_ptr<havel::ast::Expression>> args;
       args.push_back(std::move(delay));
       args.push_back(std::move(lambda));
@@ -3589,6 +3605,7 @@ std::unique_ptr<havel::ast::Statement> Parser::parseStatement() {
       auto body = parseBlockStatement();
       auto lambda = makeNodeAt<havel::ast::LambdaExpression>(kw);
       lambda->body = std::move(body);
+      ast::setLambdaContainsYield(*lambda);
       std::vector<std::unique_ptr<havel::ast::Expression>> args;
       args.push_back(std::move(lambda));
       auto call = makeNodeAt<havel::ast::CallExpression>(
@@ -3615,6 +3632,7 @@ std::unique_ptr<havel::ast::Statement> Parser::parseStatement() {
       auto body = parseBlockStatement();
       auto lambda = makeNodeAt<havel::ast::LambdaExpression>(kw);
       lambda->body = std::move(body);
+      ast::setLambdaContainsYield(*lambda);
       std::vector<std::unique_ptr<havel::ast::Expression>> args;
       args.push_back(std::move(delay));
       args.push_back(std::move(lambda));
@@ -4124,8 +4142,15 @@ std::unique_ptr<havel::ast::Statement> Parser::parseStatement() {
     if (at().type == havel::TokenType::OpenParen || at().type == havel::TokenType::OpenBracket) {
       cmdExpr = parseExpression();
     } else if (at().type == havel::TokenType::Identifier) {
-      // Just an identifier - parse as primary expression (e.g., $ firefox)
-      cmdExpr = parsePrimaryExpression();
+      // `$ firefox` - a bare identifier names the COMMAND to run, not a
+      // variable holding one. The spec documents this form ("$ command -
+      // Fire-and-forget execution", docs/specs/Havel.md), but the identifier
+      // was compiled as a variable read, so the run() host function received
+      // the VALUE of that variable - and with no such variable the script
+      // died with "Undefined variable: 'firefox'" instead of running
+      // firefox. Wrap the name in a string literal so it names the command.
+      cmdExpr = makeNodeAt<ast::StringLiteral>(at(), at().value, false);
+      advance(); // consume the identifier
     } else if (at().type == havel::TokenType::String ||
                at().type == havel::TokenType::MultilineString ||
                at().type == havel::TokenType::RegexString) {
@@ -4150,7 +4175,9 @@ std::unique_ptr<havel::ast::Statement> Parser::parseStatement() {
       if (at().type == havel::TokenType::OpenParen || at().type == havel::TokenType::OpenBracket) {
         nextCmdExpr = parseExpression();
       } else if (at().type == havel::TokenType::Identifier) {
-        nextCmdExpr = parsePrimaryExpression();
+        // A bare identifier names the command, same as the first stage.
+        nextCmdExpr = makeNodeAt<ast::StringLiteral>(at(), at().value, false);
+        advance(); // consume the identifier
       } else if (at().type == havel::TokenType::String ||
                  at().type == havel::TokenType::MultilineString) {
         nextCmdExpr = parsePrimaryExpression();
@@ -4554,9 +4581,16 @@ std::unique_ptr<havel::ast::Statement> Parser::parseFunctionDeclaration() {
 
   auto body = parseBlockStatement();
 
-  return makeNodeAt<havel::ast::FunctionDeclaration>(keyword, std::move(name), std::move(params),
+  auto decl = makeNodeAt<havel::ast::FunctionDeclaration>(keyword, std::move(name), std::move(params),
                                                      std::move(body), std::move(returnType),
                                                      std::move(typeParams));
+  // Hoisted generator detection: one walk here, instead of one per call to
+  // this function inside the compiler. See YieldAnalysis.hpp for why the
+  // semantics must stay identical to the old compiler-side walk.
+  if (decl->body) {
+    decl->contains_yield = ast::bodyContainsYield(*decl->body);
+  }
+  return decl;
 }
 
 std::unique_ptr<havel::ast::Statement> Parser::parseReturnStatement() {
@@ -4594,10 +4628,31 @@ std::unique_ptr<havel::ast::Statement> Parser::parseSleepStatement() {
   std::string duration;
   if (at().type == havel::TokenType::Number || at().type == havel::TokenType::String ||
       at().type == havel::TokenType::MultilineString) {
+    const havel::Token &first = at();
     duration = advance().value;
+    // The unit suffix of an unquoted duration is a SEPARATE token: the lexer
+    // splits ":1s" into Number "1" + Identifier "s", and ":500ms" into
+    // Number "500" + Identifier "ms". Taking only the number left the suffix
+    // to be parsed as the next expression, so ":1s" slept for 1ms and then
+    // died with "Unresolved identifier 's'" (observed in the REPL: ":5s"
+    // -> "Undefined variable: 's'"). Re-join a suffix that is DIRECTLY
+    // adjacent to the number - ":1 s" keeps the old, separate-token
+    // behaviour because a space means the author wrote two things.
+    if (first.type == havel::TokenType::Number && at().type == havel::TokenType::Identifier &&
+        at().column == first.column + first.length) {
+      duration += advance().value;
+    }
   } else {
-    // Try to parse as identifier (for unquoted strings like :1h30m)
-    // For now, just consume tokens until newline/semicolon
+    // Unquoted duration: :1h30m, :500ms, :2.5m. The lexer splits the number
+    // and the unit suffix into SEPARATE tokens (Number "1", Identifier "h"),
+    // so a bare `:1s` used to parse the "1" as the duration and leave the
+    // "s" to be resolved as a variable - "Unresolved identifier 's'". Join the
+    // adjacent tokens into one duration string instead; the compiler's
+    // SleepStatement case then hands the whole thing to sleep(), whose
+    // duration parser understands "1s"/"500ms"/"2.5m"/"1h".
+    //
+    // The clock form (:3:10:25) is a wall-clock target, not a duration, and
+    // is handled by the colon-separated form below.
     while (at().type != havel::TokenType::NewLine && at().type != havel::TokenType::Semicolon &&
            at().type != havel::TokenType::EOF_TOKEN && at().type != havel::TokenType::CloseBrace) {
       duration += at().value;
@@ -5987,8 +6042,12 @@ Parser::parseStructMembers(bool isColonBody, size_t colonBaseIndent) {
       // Parse body
       auto body = parseBlockStatement();
 
-      methods.push_back(makeNode<ast::StructMethodDef>(methodName, std::move(params),
-                                                       std::move(body), isConstructor, isOperator));
+      auto _m = makeNode<ast::StructMethodDef>(methodName, std::move(params),
+                                             std::move(body), isConstructor, isOperator);
+      if (_m->body) {
+        _m->contains_yield = ast::bodyContainsYield(*_m->body);
+      }
+      methods.push_back(std::move(_m));
       continue;
     }
 
@@ -6409,9 +6468,13 @@ Parser::parseClassMembers(bool isColonBody, size_t colonBaseIndent) {
       // Check if this is a constructor (method name is "init")
       bool isConstructor = (methodName == "init");
 
-      methods.push_back(makeNode<ast::ClassMethodDef>(methodName, std::move(params),
-                                                      std::move(body), isConstructor, isOperator,
-                                                      isClassMember));
+      auto _m = makeNode<ast::ClassMethodDef>(methodName, std::move(params),
+                                            std::move(body), isConstructor, isOperator,
+                                            isClassMember);
+      if (_m->body) {
+        _m->contains_yield = ast::bodyContainsYield(*_m->body);
+      }
+      methods.push_back(std::move(_m));
       continue;
     }
 
@@ -6663,8 +6726,12 @@ std::unique_ptr<havel::ast::Statement> Parser::parseTraitDeclaration() {
       defaultBody = parseBlockStatement();
     }
 
-    methods.push_back(makeNode<havel::ast::TraitMethod>(std::move(methodName), std::move(params),
-                                                        std::move(defaultBody)));
+    auto _t = makeNode<havel::ast::TraitMethod>(std::move(methodName), std::move(params),
+                                             std::move(defaultBody));
+    if (_t->defaultBody) {
+      _t->contains_yield = ast::bodyContainsYield(*_t->defaultBody);
+    }
+    methods.push_back(std::move(_t));
   }
 
   if (at().type != havel::TokenType::CloseBrace) {
@@ -6768,8 +6835,12 @@ std::unique_ptr<havel::ast::Statement> Parser::parseProtocolDeclaration() {
       defaultBody = parseBlockStatement();
     }
 
-    methods.push_back(makeNode<havel::ast::TraitMethod>(std::move(methodName), std::move(params),
-                                                        std::move(defaultBody)));
+    auto _t = makeNode<havel::ast::TraitMethod>(std::move(methodName), std::move(params),
+                                             std::move(defaultBody));
+    if (_t->defaultBody) {
+      _t->contains_yield = ast::bodyContainsYield(*_t->defaultBody);
+    }
+    methods.push_back(std::move(_t));
   }
 
   if (isColonBody) {
@@ -7112,6 +7183,7 @@ void Parser::parseUIElementDeclaration(const std::string &parentVar, bool addToP
           auto body = parseBlockStatement();
           auto lambda = makeNode<havel::ast::LambdaExpression>();
           lambda->body = std::move(body);
+          ast::setLambdaContainsYield(*lambda);
           handler = std::move(lambda);
         } else {
           // Expression handler
@@ -7489,7 +7561,17 @@ bool Parser::parseOnEventParts(std::string &nameOut,
   if (at().type == havel::TokenType::Where ||
       (at().type == havel::TokenType::Identifier && at().value == "where")) {
     advance(); // consume "where"
+    // The filter expression is followed by the handler body '{ ... }'.
+    // Brace-call sugar must be off while parsing the filter, or the filter
+    // swallows the handler body as a brace-call argument: in
+    // `where event.kind == "special" { ... }` the trailing string took the
+    // block as its argument and the parser then reported "Expected '{'
+    // after event subscription". This is the same guard the other
+    // expression-then-block constructs use (repeat, for, while, ...).
+    bool prevAllowBraceSugar = context.allowBraceSugar;
+    context.allowBraceSugar = false;
     filterOut = parseExpression();
+    context.allowBraceSugar = prevAllowBraceSugar;
   }
 
   // Handler body
@@ -9435,6 +9517,15 @@ std::unique_ptr<havel::ast::Statement> Parser::parseAtDecoratorStatement() {
 std::unique_ptr<havel::ast::Statement> Parser::parseWithStatement() {
   advance(); // consume 'with'
 
+  // The object expression is followed by the block '{ ... }'. Brace-call
+  // sugar must be off while parsing it, or the module name takes the block
+  // as a brace-call argument: in `with math { ... }` the block was consumed
+  // and the parser reported "Expected '{' after with expression". This is
+  // the same guard the other expression-then-block constructs use (repeat,
+  // for, while, and the `on ... where ...` filter).
+  const bool prevAllowBraceSugar = context.allowBraceSugar;
+  context.allowBraceSugar = false;
+
   auto object = parsePrattExpression(51); // stop before 'as' (BP 50)
 
   std::unique_ptr<havel::ast::Identifier> alias;
@@ -9463,7 +9554,10 @@ std::unique_ptr<havel::ast::Statement> Parser::parseWithStatement() {
       auto nextObj = parsePrattExpression(51);
       objects.push_back(std::move(nextObj));
     }
-    // Parse the shared body once.
+    // Parse the shared body once. Brace-call sugar is restored first: the
+    // body is a block of statements, and a statement inside it may use
+    // brace-call sugar legitimately.
+    context.allowBraceSugar = prevAllowBraceSugar;
     if (at().type != havel::TokenType::OpenBrace) {
       failAt(at(), "Expected '{' after with expression");
     }
@@ -9495,6 +9589,9 @@ std::unique_ptr<havel::ast::Statement> Parser::parseWithStatement() {
     return std::move(innerBody.front());
   }
 
+  // The body is a block of statements; brace-call sugar is restored before
+  // it is parsed, because a statement inside may use the sugar legitimately.
+  context.allowBraceSugar = prevAllowBraceSugar;
   if (at().type != havel::TokenType::OpenBrace) {
     failAt(at(), "Expected '{' after with expression");
   }
@@ -9565,6 +9662,7 @@ std::unique_ptr<havel::ast::Expression> Parser::parseQueryExpression() {
     // Wrap the condition expression in an ExpressionStatement
     auto body = makeNode<havel::ast::ExpressionStatement>(std::move(condition));
     auto lambda = makeNode<havel::ast::LambdaExpression>(std::move(params), std::move(body));
+    ast::setLambdaContainsYield(*lambda);
 
     filterCall->args.push_back(std::move(lambda));
     stages.push_back(std::move(filterCall));
@@ -9586,6 +9684,7 @@ std::unique_ptr<havel::ast::Expression> Parser::parseQueryExpression() {
     // Wrap the transform expression in an ExpressionStatement
     auto body = makeNode<havel::ast::ExpressionStatement>(std::move(transform));
     auto lambda = makeNode<havel::ast::LambdaExpression>(std::move(params), std::move(body));
+    ast::setLambdaContainsYield(*lambda);
 
     mapCall->args.push_back(std::move(lambda));
     stages.push_back(std::move(mapCall));
@@ -10690,7 +10789,11 @@ std::unique_ptr<havel::ast::Expression> Parser::parsePrimaryExpression() {
     }
     auto body = parseBlockStatement();
 
-    return makeNode<havel::ast::LambdaExpression>(std::move(params), std::move(body));
+    std::unique_ptr<havel::ast::LambdaExpression> _lam = makeNode<havel::ast::LambdaExpression>(std::move(params), std::move(body));
+
+    ast::setLambdaContainsYield(*_lam);
+
+    return _lam;
   }
 
   case havel::TokenType::OpenParen: {
@@ -11890,14 +11993,18 @@ Parser::parseLambdaFromParams(std::vector<std::unique_ptr<havel::ast::FunctionPa
   // Body can be block or expression
   if (at().type == havel::TokenType::OpenBrace) {
     auto block = parseBlockStatement();
-    return makeNode<havel::ast::LambdaExpression>(std::move(params), std::move(block));
+    auto _lam = makeNode<havel::ast::LambdaExpression>(std::move(params), std::move(block));
+    ast::setLambdaContainsYield(*_lam);
+    return _lam;
   }
   // Expression body: wrap in Return inside a block
   auto expr = parseExpression();
   auto exprStmt = makeNode<havel::ast::ExpressionStatement>(std::move(expr));
   auto block = makeNode<havel::ast::BlockStatement>();
   block->body.push_back(std::move(exprStmt));
-  return makeNode<havel::ast::LambdaExpression>(std::move(params), std::move(block));
+  auto _lam = makeNode<havel::ast::LambdaExpression>(std::move(params), std::move(block));
+  ast::setLambdaContainsYield(*_lam);
+  return _lam;
 }
 
 std::unique_ptr<havel::ast::Expression>
@@ -11922,8 +12029,8 @@ Parser::parsePostfixExpression(std::unique_ptr<ast::Expression> expr) {
         if (!isObject) {
           auto block = parseBlockStatement();
           std::vector<std::unique_ptr<havel::ast::FunctionParameter>> noParams;
-          auto lambda =
-              makeNode<havel::ast::LambdaExpression>(std::move(noParams), std::move(block));
+          auto lambda = makeNode<havel::ast::LambdaExpression>(std::move(noParams), std::move(block));
+          ast::setLambdaContainsYield(*lambda);
           // Append lambda to existing call args
           if (auto *callPtr = dynamic_cast<havel::ast::CallExpression *>(expr.get())) {
             callPtr->args.push_back(std::move(lambda));
@@ -11983,23 +12090,30 @@ Parser::parsePostfixExpression(std::unique_ptr<ast::Expression> expr) {
         auto block = parseBlockStatement();
         std::vector<std::unique_ptr<havel::ast::FunctionParameter>> noParams;
         auto lambda = makeNode<havel::ast::LambdaExpression>(std::move(noParams), std::move(block));
+        ast::setLambdaContainsYield(*lambda);
         args.push_back(std::move(lambda));
       }
       expr = makeNode<havel::ast::CallExpression>(std::move(expr), std::move(args));
-    } else if ((at().type == havel::TokenType::String ||
-                at().type == havel::TokenType::MultilineString ||
-                at().type == havel::TokenType::Number ||
-                at().type == havel::TokenType::Identifier ||
-                at().type == havel::TokenType::InterpolatedString ||
-                at().type == havel::TokenType::At || at().type == havel::TokenType::AtAt ||
-                at().type == havel::TokenType::Not || at().type == havel::TokenType::Length) &&
-               context.allowBraceSugar) {
+    } else if (canStartImplicitCallArgument(at().type) && context.allowBraceSugar) {
       // Implicit call: expression followed by a literal or prefix
       // operator (e.g., print "Hello", print @id, print !x)
       // Only allowed when brace call sugar is enabled
       auto arg = parseUnary();
       std::vector<std::unique_ptr<havel::ast::Expression>> args;
       args.push_back(std::move(arg));
+      // Comma-separated arguments: `print a, b` -> print(a, b). Without
+      // this, the comma reached the statement parser and it reported
+      // "Expected '=' after comma-separated targets" (the multi-assignment
+      // path) for a plain two-argument call.
+      while (at().type == havel::TokenType::Comma) {
+        advance(); // consume comma
+        auto nextArg = parseUnary();
+        if (!nextArg) {
+          errorAt(at(), "Expected expression after comma in function call");
+          return nullptr;
+        }
+        args.push_back(std::move(nextArg));
+      }
       expr = makeNode<havel::ast::CallExpression>(std::move(expr), std::move(args));
     } else if (at().type == havel::TokenType::PlusPlus ||
                at().type == havel::TokenType::MinusMinus) {
@@ -12729,6 +12843,7 @@ std::unique_ptr<havel::ast::Statement> Parser::parseGoStatement() {
     // Create lambda expression with no parameters and the block as body
     call = makeNode<havel::ast::LambdaExpression>(
         std::vector<std::unique_ptr<ast::FunctionParameter>>(), std::move(blockStmt));
+    ast::setLambdaContainsYield(static_cast<havel::ast::LambdaExpression &>(*call));
   } else {
     // Parse the function call expression: go fn()
     call = parseExpression();
@@ -12770,6 +12885,7 @@ std::unique_ptr<havel::ast::Expression> Parser::parseGoExpression() {
     // Create lambda expression with no parameters and the block as body
     call = makeNode<havel::ast::LambdaExpression>(
         std::vector<std::unique_ptr<ast::FunctionParameter>>(), std::move(blockStmt));
+    ast::setLambdaContainsYield(static_cast<havel::ast::LambdaExpression &>(*call));
 
   } else {
     // go func() or go identifier - function call
@@ -12895,6 +13011,8 @@ std::unique_ptr<havel::ast::Expression> Parser::parseAsyncExpression() {
     }
 
     auto fnExpr = makeNode<ast::LambdaExpression>(std::move(params), std::move(body));
+
+    ast::setLambdaContainsYield(*fnExpr);
     auto exprStmt = makeNode<ast::ExpressionStatement>(std::move(fnExpr));
     auto expr = makeNode<ast::AsyncExpression>(std::move(exprStmt));
     expr->line = asyncToken.line;
@@ -13068,6 +13186,7 @@ std::unique_ptr<havel::ast::Statement> Parser::parseDeferStatement() {
     advance();
     expr = makeNode<havel::ast::LambdaExpression>(
         std::vector<std::unique_ptr<ast::FunctionParameter>>(), std::move(blockStmt));
+    ast::setLambdaContainsYield(static_cast<havel::ast::LambdaExpression &>(*expr));
   } else {
     expr = parseExpression();
   }
@@ -13128,4 +13247,13 @@ std::optional<Parser::DelimiterInfo> Parser::getUnclosedDelimiter() const {
   }
   return std::nullopt;
 }
+
+// ============================================================================
+// Parse-time yield containment (hoisted generator detection)
+// ============================================================================
+//
+// The walk itself lives in ONE place - havel::ast::YieldAnalysis - so the
+// predicate that decides `contains_yield` cannot drift into a second copy in
+// the parser or the compiler. This file only calls into it (see
+// parseFunctionDeclaration).
 } // namespace havel::parser

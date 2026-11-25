@@ -1,5 +1,4 @@
 // smoke: flags = --tiering
-// smoke: timeout = 120
 // smoke: tier = slow
 // Orc object_get audit: interp OBJECT_GET auto-calls zero-arg methods
 // found on a prototype (found_on_prototype, VMCollections.cpp ~1695),

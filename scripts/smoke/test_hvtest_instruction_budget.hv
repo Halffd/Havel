@@ -1,0 +1,63 @@
+// Regression: hvtest detects a script stuck in an infinite loop WITHOUT a
+// wall-clock timeout.
+//
+// What: hvtest bounds each script's WORK with the VM's --max-instructions
+//       (default 50M, overridable per script with
+//       '// smoke: max-instructions = N'). A script that loops forever is
+//       stopped by the VM itself and reported as
+//         [FAIL] <name> (infinite loop: exceeded the N-instruction budget)
+//       The bound is load-independent, so a busy machine cannot turn a
+//       correct script into a failure - which is exactly what the old
+//       wall-clock budget did.
+//
+// Why: the old per-test timeout killed correct scripts mid-run on a loaded
+//      box and reported FAIL for code whose assertions all passed, so the
+//      gate verdict tracked the machine's load rather than the code. An
+//      unbounded script was the opposite failure: it ran forever.
+//
+// Expected: the infinite-loop script is reported as an infinite loop, the
+//           assertion-failure script is reported as an assertion failure,
+//           and a correct script still passes.
+use "fs"
+use "process"
+use "sys"
+
+// The suite runner under test. Locate it the way the other meta-tests do:
+// from the repo root it is build-debug/hvtest, from the build dir it is
+// ./hvtest.
+cwd = sys.cwd()
+hvtest_bin = ""
+for c in [cwd + "/build-debug/hvtest", cwd + "/build/hvtest", cwd + "/hvtest"] {
+    if fs.isFile(c) {
+        hvtest_bin = c
+        break
+    }
+}
+assert(hvtest_bin != "", "could not locate the hvtest binary from cwd ${cwd}")
+
+tmp = "/tmp/havel_smoke_instruction_budget"
+fs.rmdir(tmp, true)
+fs.mkdirAll(tmp + "/smoke")
+
+// The fixture declares its own budget: the suite default (50M) would take
+// far too long to reach, and this also exercises the per-test override.
+fs.write(tmp + "/smoke/infinite.hv",
+         "// smoke: max-instructions = 2000000\ni = 0\nwhile true {\n  i = i + 1\n}\n")
+fs.write(tmp + "/smoke/assert_fail.hv",
+         "v = 1\nif v != 2 {\n  print(\"FAIL: expected 2\")\n  process.exit(255)\n}\n")
+fs.write(tmp + "/smoke/correct.hv", "v = 40 + 2\nif v != 42 {\n  process.exit(255)\n}\n")
+
+res = process.run("\"${hvtest_bin}\" --smoke --scripts-root \"${tmp}\" 2>&1")
+out = res.stdout
+
+assert(out.includes("infinite loop: exceeded the 2000000-instruction budget"),
+       "an infinite-loop script must be reported as an infinite loop, got: ${out}")
+assert(!out.includes("infinite] (exit=1)"),
+       "the infinite-loop script must not be reported as a plain exit code, got: ${out}")
+assert(out.includes("assert_fail"),
+       "the assertion-failure script must appear in the output, got: ${out}")
+assert(out.includes("correct"),
+       "the correct script must appear in the output, got: ${out}")
+
+fs.rmdir(tmp, true)
+print("PASS")

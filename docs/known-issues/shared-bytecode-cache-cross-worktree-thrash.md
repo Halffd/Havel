@@ -1,10 +1,24 @@
 # The shared bytecode cache thrashes between worktrees: every launch recompiles the same modules
 
-**Status:** FIXED (cache key is now content-keyed). The fix landed on
-havel-2; the known-issue entry is kept because the failure mode is subtle
+**Status:** FIXED. The cache key is now content-keyed (fix landed on
+havel-2, commit `100b9e49af4d`, merged into havel-3 via merge commit
+`e53de0587`, 2026-11-11; it reached main via the same merge). The
+incremental serve path's own defects - the writer stamping a different
+text than the reader asked about, a content mismatch reported as an
+unreadable file, and the launcher adding a newline the cache could not
+forgive - were closed on 2026-11-13; see "Fixed defect (Nov 13 2026)"
+below. The known-issue entry is kept because the failure mode is subtle
 and the fix touches a shared interface. Distinct from
 `havel-process-linger-during-box-storms.md` (that one is host storage
 congestion); this one reproduces on a calm box with load ~1.
+
+The Nov 13 2026 fix also closed the three consecutive havel-3 gate
+failures of Nov 12 (rc=1 at 17:20Z, 20:07Z and 22:58Z, each ~9500s). No
+commit landed between the last failure and the passing run except that
+one; the gate went rc=1 -> rc=0 and the wall time fell from ~9500s to
+~2617s. The failing test was `test_issue_config_set_in_module_scope`,
+which had timed out at its 120s budget; with the fix it passes in
+~30-35s.
 
 ## Mechanism
 
@@ -396,6 +410,173 @@ pre-fix code already hashed the live source during validation
 (`checkBcCache`), so the marginal cost is well under the recompile the
 thrash used to force (2431 ms vs 1735 ms warm, measured in the defect
 section above).
+
+### Not done: the cache directory is not cleaned up
+
+The old name-only entries (`lang.debug.hvc`) are left on disk. They are
+regenerable and harmless - nothing looks them up any more - but they are
+not garbage-collected. A future cleanup pass could remove entries whose
+name no longer matches any live module.
+
+## Fixed defect (Nov 13 2026): the entry's source identity disagreed with the text it was compiled from
+
+Two related defects in the incremental serve path, found while measuring
+the shared-cache lock convoy (see
+`havel-process-linger-during-box-storms.md`, "Second, code-level
+contributor"). Neither is the cause of the convoy; both make the
+cache's diagnostics wrong and make a stale entry fail in the most
+expensive possible way.
+
+**Status: FIXED.** Defect 1 (writer stamps the in-memory text, reader
+re-validates against the file) and defect 2 (a content mismatch reported
+as an unreadable file) are closed. A THIRD defect was found while closing
+them: the launcher appended a newline to every file it read, so a single
+script's compiled text was one byte longer than the file on disk and the
+entry it wrote could never be served. See "The launcher added a byte the
+cache could not forgive" below.
+
+### The launcher added a byte the cache could not forgive
+
+The launcher joined the scripts it was given with
+
+    code += content + "\n";
+
+so the compiled text for a SINGLE script was the file's content plus a
+trailing newline - one byte longer than the file. The cache entry is keyed
+by the file's PATH hash (one entry per file) and the serve path validates
+an entry against the exact text the request would compile:
+
+    if (srcInfo.size != sourceText.size())
+      return reject("source-size-differs", ...);
+
+The entry the compile wrote therefore stamped 13 bytes (file + newline)
+while the next request asked about 12 (the file). The entry was rejected,
+the script recompiled, and the entry rewritten - every launch, forever.
+The cache never served for a single-file script.
+
+Measured on /host/havel-3, private `XDG_CACHE_HOME`:
+
+    run 1: [compile] cache: miss   (no-entry)
+    run 2: [compile] cache: miss   (source-size-differs 12 != 13)
+    run 3: [compile] cache: miss   (source-size-differs 12 != 13)
+
+After the fix:
+
+    run 1: [compile] cache: miss   (no-entry)
+    run 2: [compile] cache: hit
+    run 3: [compile] cache: hit
+
+The newline is a SEPARATOR between files, so it belongs between them and
+not after the last one. The rule now lives in one place,
+`src/core/init/ScriptSourceJoin.hpp` (`joinScriptContents`), used by every
+launcher path that joins scripts, and is pinned by
+`tests/script_source_join_ut.cpp`.
+
+A single script is now compiled VERBATIM - the text the compiler sees is
+the file's content, so the entry the compile writes describes exactly what
+the reader asks about. Multi-file units are separated by one newline
+between each pair; their entry name is derived from the joined names and
+does not collide with any single file's entry.
+
+### Defect 1: the writer stamps the in-memory text, the reader validates the file on disk
+
+`ValueSerializer::serializeChunk` stamps the source identity from the
+text it was handed:
+
+    if (!compiledText.empty()) {
+      srcSize = compiledText.size();
+      srcHash = sha256(compiledText.data(), compiledText.size());
+    } else if (!srcPath.empty() && std::filesystem::exists(srcPath)) {
+      srcSize = std::filesystem::file_size(srcPath);
+      srcHash = sha256_file(srcPath);
+    }
+
+(`RuntimeSupport.cpp`, "Source size + hash"). But `deserializeChunk`
+re-validates the entry against the FILE on disk, not against the text
+the caller would compile:
+
+    if (!srcPath.empty() && std::filesystem::exists(srcPath)) {
+      auto actualSize = std::filesystem::file_size(srcPath);
+      if (actualSize != srcSize) return std::nullopt;
+      auto actualHash = sha256_file(srcPath);
+      if (actualHash != srcHash) return std::nullopt;
+    }
+
+So when the two disagree, the entry can never be served even though the
+source it names has not changed since the write: the writer recorded one
+identity, the reader demands another.
+
+Reproduced deterministically (private `XDG_CACHE_HOME`, one script, no
+other tree involved):
+
+1. write `print("hi")` (13 bytes including the trailing newline),
+2. rewrite the file as `print("hI")` (12 bytes),
+3. run - the entry is correctly rejected, but as `source-hash-differs`,
+   and the run REWRITES the entry,
+4. run again unchanged - the entry now reports **`entry-unreadable`**.
+
+The entry written in step 3 embeds size 13 while the live file is 12
+bytes:
+
+    embedded size: 13   live size: 12   match: False
+    embedded hash: 261c3874f28dbc58ec10eab000cd4e8fad2641acc563d6689e40174910244a5a
+    live hash    : c01226b628eb7f325cf2511f03d74b56d77c79eca4937748f2f881292100ba4c
+
+The mismatch is between the text the compiler was given and the file the
+reader hashes - the two are separate reads of the same path at different
+times, so any edit between them produces an entry that is permanently
+unservable.
+
+### Defect 2: a content mismatch is reported as an unreadable file
+
+`loadCachedScriptChunk` validates the entry against the in-memory text
+first (source size, then source hash) and only then deserializes it:
+
+    auto chunk = serializer.loadChunk(hvcPath.string());
+    if (!chunk) {
+      return reject("entry-unreadable", hvcPath.string());
+    }
+
+`loadChunk` returns `nullopt` for BOTH "the file cannot be parsed" and
+"the entry's embedded identity does not match the file it names"
+(defect 1 above). Both collapse into the same label, so the diagnostic
+points at the wrong cause: the file is perfectly readable, and `cat` on
+it succeeds.
+
+Measured effect of the two together: the entry is rejected, the script
+is recompiled from source, and the entry is rewritten - every launch.
+For the module cache that is the thrash this document is about; for the
+incremental serve path it means the cache never serves.
+
+### What a fix has to preserve
+
+The reader must validate the entry against the SAME text the writer
+stamped, or the writer must stamp the file on disk. Stamping the disk
+file alone is not enough: the reader also has to compare like with like,
+or the two paths keep disagreeing whenever a source is edited between the
+compile and the write.
+
+### How it was fixed
+
+Both halves now compare like with like:
+
+- The writer stamps the text it was GIVEN (the compiled text), not a
+  second read of the file. An edit landing between the compile read and
+  the identity read can no longer produce an entry that describes neither.
+- The reader validates the entry against the text it is about to compile,
+  and `deserializeChunk`'s re-read of the file is SKIPPED for that path -
+  the caller has already validated the entry against the stronger
+  identity. `ValueSerializer::loadChunk` takes a
+  `skipSourceRevalidation` flag for it.
+
+And the text the launcher compiles is now the file's own content, so the
+identity the writer stamps, the identity the reader asks about, and the
+file on disk are all the same bytes.
+
+Regression tests: `tests/bytecode_cache_identity_ut.cpp` (the writer
+stamps the compiled text; the reader names the real reason; a second
+compile of the same text is served from the cache) and
+`tests/script_source_join_ut.cpp` (the join rule).
 
 ### Not done: the cache directory is not cleaned up
 

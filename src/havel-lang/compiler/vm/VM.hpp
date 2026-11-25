@@ -17,6 +17,7 @@
 #include <shared_mutex>
 #include <span>
 #include <stack>
+#include <stdexcept>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
@@ -769,6 +770,10 @@ public:
   std::array<uint64_t, 256> opcode_counts_{};
   uint64_t executed_instructions_ = 0;
   uint64_t max_instructions_ = 0; // 0 = no limit
+  // The dispatch counter's value at the last fast-path limit checkpoint.
+  // The dispatch counter resets per scheduler tick (beginFastTick), so the
+  // delta from this value is what the script ran since the last checkpoint.
+  uint64_t fast_path_limit_counter_ = 0;
 
   // Scheduler time-slice budget for runDispatchFast: when nonzero, the
   // fast dispatch loop returns at its next periodic check (the
@@ -807,8 +812,31 @@ public:
     // counter, which must start fresh per tick (the pump reads the
     // consumed count to time-slice goroutines).
     dispatch_instr_counter_ = 0;
+    // The instruction-budget checkpoint tracker is tick-local: it holds
+    // the dispatch counter's value at the last periodic checkpoint of
+    // THIS tick. It resets with the counter, so a checkpoint's delta
+    // measures exactly the instructions run since the previous checkpoint
+    // within this tick.
+    fast_path_limit_counter_ = 0;
   }
-  void endFastTick() { fast_tick_budget_ = 0; }
+  void endFastTick() {
+    fast_tick_budget_ = 0;
+    // Account the tick's tail: the instructions run after the last
+    // periodic checkpoint. Without this the tail (up to 8191 instructions
+    // per tick) would be dropped every tick, and a script that yields
+    // every tick could run forever without ever reaching a checkpoint.
+    if (max_instructions_ > 0) {
+      const uint64_t tail = dispatch_instr_counter_ > fast_path_limit_counter_
+                                ? dispatch_instr_counter_ - fast_path_limit_counter_
+                                : 0;
+      executed_instructions_ += tail;
+      if (executed_instructions_ > max_instructions_) {
+        throw std::runtime_error("VM instruction limit exceeded (" +
+                                 std::to_string(max_instructions_) +
+                                 ") - possible infinite loop");
+      }
+    }
+  }
 
   // System object initializer - called after registerDefaultHostGlobals()
   using SystemObjectInitializer = std::function<void(VM *)>;
@@ -2040,9 +2068,49 @@ public:
   void traceWhen(const std::string &message) const;
   void traceAsync(const std::string &message) const;
   uint64_t executedInstructionCount() const { return executed_instructions_; }
-  void setMaxInstructions(uint64_t limit) { max_instructions_ = limit; }
+  void setMaxInstructions(uint64_t limit) {
+    max_instructions_ = limit;
+    // The budget bounds the VM's TOTAL work, so setting a new limit starts
+    // a fresh count. Resetting here (rather than in execute()) keeps the
+    // bound meaningful for code that runs through more than one
+    // execute() call - eval(), a module load, a re-entrant host call -
+    // each of which would otherwise clear the count and let an unbounded
+    // loop escape the budget.
+    executed_instructions_ = 0;
+    fast_path_limit_counter_ = 0;
+  }
   uint64_t maxInstructions() const { return max_instructions_; }
   uint64_t opcodeCount(OpCode opcode) const { return opcode_counts_[static_cast<uint8_t>(opcode)]; }
+
+  // Enforce the instruction limit from the fast dispatch path. Called at the
+  // fast path's periodic checkpoint with the shared dispatch counter's
+  // current value.
+  //
+  // The dispatch counter (dispatch_instr_counter_) is reset by beginFastTick
+  // at every scheduler tick, so it alone cannot measure a script's total
+  // work. The tracker fast_path_limit_counter_ is tick-local too: it holds
+  // the dispatch counter's value at the last checkpoint of THIS tick, so
+  // the delta is exactly the instructions run since that checkpoint. The
+  // tick's tail (the instructions after the last checkpoint) is accounted
+  // by endFastTick, so every instruction is counted exactly once.
+  //
+  // The cumulative count lands in executed_instructions_, the same counter
+  // the slow path uses: a script may run both paths (the fast path redirects
+  // to the slow path for complex opcodes), so separate counters would let
+  // the total work reach twice the configured budget.
+  void checkFastPathInstructionLimit(uint64_t dispatch_counter_now) {
+    const uint64_t delta =
+        dispatch_counter_now >= fast_path_limit_counter_
+            ? dispatch_counter_now - fast_path_limit_counter_
+            : dispatch_counter_now; // counter was reset since the last check
+    fast_path_limit_counter_ = dispatch_counter_now;
+    executed_instructions_ += delta;
+    if (executed_instructions_ > max_instructions_) {
+      throw std::runtime_error("VM instruction limit exceeded (" +
+                               std::to_string(max_instructions_) +
+                               ") - possible infinite loop");
+    }
+  }
 
   void setHeadlessMode(bool enabled) { headlessMode_ = enabled; }
   bool isHeadlessMode() const { return headlessMode_; }

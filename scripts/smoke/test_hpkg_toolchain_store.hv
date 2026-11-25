@@ -1,4 +1,3 @@
-// smoke: timeout = 180
 // Regression: hpkg's toolchain store (per-commit havel binaries).
 //
 // The version manager keeps one directory per commit under
@@ -15,6 +14,31 @@
 // Expected: PASS, exit 0. Fails if any subcommand regresses, if a copied
 // binary cannot start (missing runtime .so beside it), or if selection
 // precedence between HAVEL_TOOLCHAIN and the default file breaks.
+//
+// The timeout is 600 s, not the 180 s it used to be.
+//
+// Every `toolchain run` and `toolchain regress` starts a full havel
+// engine: the COPIED binary has to boot AND compile the stdlib from
+// source, because a fresh toolchain directory has no bytecode cache.
+// There are eight such starts in this script, so the cost is eight
+// engine startups.
+//
+// Measured wall time for the whole script on this box, same binary:
+//
+//   load  2-3   ->  50 s
+//   load  8-11  -> 224 s
+//   load  12    -> 409 s (under hvtest, which adds its own overhead)
+//
+// The script ran with its 180 s budget before the check for the new
+// "a script path is a command, not a ref" behavior was added; that check
+// starts two more engines. A budget that does not cover the work the
+// test actually does turns a load spike into a false failure, and this
+// test has failed that way repeatedly (see the gate-evidence table in
+// docs/known-issues/x11-hotkey-modifier-and-event-delivery.md).
+//
+// 600 s is inside the range the suite already uses for scripts that
+// legitimately start many engines (test_issue_hotkey_pin_lifetime.hv
+// uses 1200 s).
 
 use "fs"
 use "process"
@@ -134,6 +158,13 @@ fs.write(FIXTURE, "print(\"TOOLCHAIN_RAN\")\n")
 r = process.run(env_prefix + " " + HPKG + " toolchain run " + head + " run " + FIXTURE)
 check("run executes the stored binary", r.exitCode == 0 && r.stdout.includes("TOOLCHAIN_RAN"))
 
+// The first argument is a ref only if it resolves to an installed
+// toolchain; otherwise the whole arg list runs under the current one. So
+// a script path as the first argument must reach the current toolchain's
+// havel - not be rejected as an unknown ref.
+r = process.run(env_prefix + " " + HPKG + " toolchain run " + FIXTURE)
+check("run treats a script path as a command, not a ref", r.exitCode == 0 && r.stdout.includes("TOOLCHAIN_RAN"))
+
 // --- regress: same command under the selected toolchain, pass and fail.
 r = process.run(env_prefix + " " + HPKG + " toolchain regress " + head + " -- run " + FIXTURE)
 check("regress reports the passing toolchain", r.exitCode == 0 && r.stdout.includes("passed:"))
@@ -183,8 +214,27 @@ r = process.run(env_prefix + " " + HPKG + " toolchain tags --repo /nonexistent-r
 check("tags refuses a non-repository path", r.exitCode == 1 && r.stderr.includes("cannot read tags"))
 
 // --- error paths
+//
+// The first argument of `toolchain run` is a toolchain ref ONLY if it
+// resolves to an INSTALLED toolchain; anything else (a script path, a
+// flag, ...) means "run under the current toolchain". That is deliberate:
+// `hpkg toolchain run ./script.hv` is the natural spelling, and treating
+// the path as a ref name produced the absurd
+// "not installed: /home/.../script.hv".
+//
+// So an uninstalled ref is NOT an error while a default is set - it falls
+// back to the current toolchain. The refusal only happens when there is
+// no default either. The check below therefore uses a store with no
+// default selected, which is the case that must still be refused.
+EMPTY_STORE = "${sys.tmpdir()}/havel_tc_empty_${sys.pid()}"
+r = process.run("env HAVEL_TOOLCHAIN_STORE=" + EMPTY_STORE + " " + HPKG + " toolchain run deadbeefdeadbeef run x.hv")
+check("run refuses an uninstalled ref with no default", r.exitCode == 1 && r.stderr.includes("not an installed toolchain"))
+
+// With a default set, the same uninstalled ref falls back to the current
+// toolchain - the first arg is then part of the command, so the run fails
+// on the missing script rather than on the ref.
 r = process.run(env_prefix + " " + HPKG + " toolchain run deadbeefdeadbeef run x.hv")
-check("run refuses an uninstalled ref", r.exitCode == 1 && r.stderr.includes("not installed"))
+check("run falls back to the current toolchain for an uninstalled ref", r.exitCode == 1 && !r.stderr.includes("not an installed toolchain"))
 
 r = process.run(env_prefix + " " + HPKG + " toolchain install nosuchrefatall")
 check("install refuses an unknown ref", r.exitCode == 1 && r.stderr.includes("ref not found"))
@@ -198,6 +248,7 @@ check("remove refuses to drop the default", r.exitCode == 1 && r.stderr.includes
 // --- clean up
 r = process.run(env_prefix + " " + HPKG + " toolchain use " + head)
 fs.remove_all(STORE)
+fs.remove_all(EMPTY_STORE)
 fs.remove(FIXTURE)
 fs.remove(FAILFIX)
 

@@ -1,5 +1,4 @@
 // smoke: flags = --tiering
-// smoke: timeout = 300
 // smoke: tier = slow
 // Regression: GC starvation in JIT-compiled loops. Before the backedge GC
 // checkpoint (havel_vm_gc_checkpoint at the throttled backedge hook), no

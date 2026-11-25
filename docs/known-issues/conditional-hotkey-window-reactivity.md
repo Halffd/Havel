@@ -19,7 +19,10 @@ condition gate exists and re-checks the condition on every press.
 
 2. **Window conditions have no reactive deps.** `when window.title contains
    "x"` compiles to `LOAD_GLOBAL window` (a static namespace object) plus a
-   host call. The DependencyTracker therefore records dep `"window"` — a
+   host call. The DependencyTracker (the reactive one,
+   `havel::compiler::DependencyTracker` in
+   src/havel-lang/runtime/concurrency/DependencyTracker.hpp) therefore
+   records dep `"window"` — a
    global nothing ever stores to. No `STORE_GLOBAL` -> no
    `emitVariableChanged` -> the dep-driven re-eval (`reevalConditionalHotkeys`
    / `setOnVarChangedSync` / `ExecutionEngine::onVariableChanged`) never

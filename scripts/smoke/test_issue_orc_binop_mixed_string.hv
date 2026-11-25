@@ -1,5 +1,4 @@
 // smoke: flags = --tiering
-// smoke: timeout = 120
 // smoke: tier = slow
 // Regression: ORC binop deopt fallback returned null for mixed string/int.
 // What: In emitSpecializedBinop (BytecodeOrcJitLowering.cpp), the deoptBB

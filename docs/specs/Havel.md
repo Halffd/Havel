@@ -2708,7 +2708,7 @@ config.end()  // Single save
 
 ## Language Reference
 
-For complete grammar specification, see [GRAMMAR.md](GRAMMAR.md).
+For complete grammar specification, see [Language Reference](../language/lexical.md).
 
 ### Quick Syntax Reference
 
@@ -2742,7 +2742,8 @@ repeat 5 { print("loop") }
 
 ### Standard Library
 
-Use `help()` in REPL or see [GRAMMAR.md#standard-library](GRAMMAR.md#standard-library) for complete list.
+Use `help()` in REPL for the complete list; the Standard Library section in
+this site documents each module (`fs`, `sys`, `math`, `string`, ...).
 
 ### Script Imports
 

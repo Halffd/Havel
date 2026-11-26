@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <cstdlib>
+#include <set>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -11,6 +12,8 @@
 
 namespace fs = std::filesystem;
 
+static std::string trim(std::string s);
+
 struct PackageManifest {
   std::string name;
   std::string version{"0.1.0"};
@@ -18,8 +21,161 @@ struct PackageManifest {
   std::string author;
   std::string license{"MIT"};
   std::vector<std::string> dependencies;
+  // Parallel to `dependencies`: the version constraint recorded for each
+  // dependency ("*", "^1.2.3", ">=1.0.0, <2.0.0"). Empty when the manifest
+  // gave no operator, which means "*".
+  std::vector<std::string> dependency_specs;
   std::vector<std::string> files;
 };
+
+// ---------------------------------------------------------------------------
+// Semantic versions and constraints (cargo/npm-shaped)
+//
+// Parsed forms: "1.2.3" (exact), "*" (any), "^1.2.3" (compatible: same major,
+// or same minor when major is 0), "~1.2.3" (same minor), and comma-joined
+// comparator chains ">=1.2.3, <2.0.0". Bare numbers mean exact; missing
+// parts are zero, so "1" == "1.0.0".
+struct SemVer {
+  int major = 0;
+  int minor = 0;
+  int patch = 0;
+};
+
+static bool parse_semver(const std::string &raw, SemVer &out) {
+  std::string s;
+  // Tolerate a leading 'v' and drop any pre-release/build suffix: a
+  // published 1.0.0-beta satisfies nothing by suffix today, but it must not
+  // make the numeric version unreadable.
+  size_t start = 0;
+  while (start < raw.size() && (raw[start] == 'v' || raw[start] == 'V'))
+    ++start;
+  for (size_t i = start; i < raw.size(); ++i) {
+    char c = raw[i];
+    if (c == '-' || c == '+')
+      break;
+    s.push_back(c);
+  }
+  if (s.empty())
+    return false;
+  int part = 0, value = 0, count = 0;
+  for (char c : s) {
+    if (c == '.') {
+      if (part > 2)
+        return false;
+      if (count == 0)
+        return false; // "1..2"
+      if (part == 0)
+        out.major = value;
+      else if (part == 1)
+        out.minor = value;
+      else
+        out.patch = value;
+      value = 0;
+      count = 0;
+      ++part;
+      if (part > 3)
+        return false;
+      continue;
+    }
+    if (c < '0' || c > '9')
+      return false;
+    value = value * 10 + (c - '0');
+    ++count;
+  }
+  if (count == 0)
+    return false;
+  if (part == 0)
+    out.major = value;
+  else if (part == 1)
+    out.minor = value;
+  else
+    out.patch = value;
+  return true;
+}
+
+static int compare_semver(const SemVer &a, const SemVer &b) {
+  if (a.major != b.major)
+    return a.major < b.major ? -1 : 1;
+  if (a.minor != b.minor)
+    return a.minor < b.minor ? -1 : 1;
+  if (a.patch != b.patch)
+    return a.patch < b.patch ? -1 : 1;
+  return 0;
+}
+
+// One comparator term of a constraint.
+static bool term_satisfies(const SemVer &v, const std::string &term_in) {
+  std::string term = trim(term_in);
+  if (term.empty() || term == "*" || term == "x" || term == "X")
+    return true;
+  SemVer base{};
+  if (term[0] == '^' || term[0] == '~') {
+    if (!parse_semver(term.substr(1), base))
+      return false;
+    if (compare_semver(v, base) < 0)
+      return false;
+    SemVer upper = base;
+    if (term[0] == '^') {
+      // Caret: while major is 0 the minor is the breaking axis (npm's rule).
+      if (base.major > 0) {
+        upper = {base.major + 1, 0, 0};
+      } else if (base.minor > 0) {
+        upper = {0, base.minor + 1, 0};
+      } else {
+        upper = {0, 0, base.patch + 1};
+      }
+    } else {
+      upper = {base.major, base.minor + 1, 0};
+    }
+    return compare_semver(v, upper) < 0;
+  }
+  static const char *ops[] = {">=", "<=", "==", "!=", ">", "<", "="};
+  for (const char *op : ops) {
+    size_t n = std::strlen(op);
+    if (term.size() > n && term.compare(0, n, op) == 0) {
+      if (!parse_semver(term.substr(n), base))
+        return false;
+      int cmp = compare_semver(v, base);
+      std::string o(op);
+      if (o == ">=")
+        return cmp >= 0;
+      if (o == "<=")
+        return cmp <= 0;
+      if (o == "==" || o == "=")
+        return cmp == 0;
+      if (o == "!=")
+        return cmp != 0;
+      if (o == ">")
+        return cmp > 0;
+      if (o == "<")
+        return cmp < 0;
+    }
+  }
+  // Bare version: exact.
+  if (!parse_semver(term, base))
+    return false;
+  return compare_semver(v, base) == 0;
+}
+
+static bool satisfies(const std::string &version, const std::string &constraint) {
+  SemVer v{};
+  if (!parse_semver(version, v))
+    return false;
+  std::string c = trim(constraint);
+  if (c.empty() || c == "*")
+    return true;
+  // Comma-joined terms are AND-ed; "||" (or) is rejected rather than
+  // half-supported, so an unparseable spec never silently resolves.
+  if (c.find("||") != std::string::npos)
+    return false;
+  std::istringstream parts(c);
+  std::string term;
+  while (std::getline(parts, term, ',')) {
+    if (!term_satisfies(v, term))
+      return false;
+  }
+  return true;
+}
 
 static std::string get_packages_dir() {
   const char *home = std::getenv("HOME");
@@ -66,9 +222,16 @@ static bool parse_havel_toml(const fs::path &path, PackageManifest &manifest) {
         auto dep_end = dep.find_last_not_of(" \t");
         if (dep_end != std::string::npos)
           dep = dep.substr(0, dep_end + 1);
+        std::string spec = line.substr(eq + 1);
+        auto vstart = spec.find_first_not_of(" \t\"");
+        auto vend = spec.find_last_not_of(" \t\"");
+        spec =
+            (vstart == std::string::npos) ? std::string() : spec.substr(vstart, vend - vstart + 1);
         manifest.dependencies.push_back(dep);
+        manifest.dependency_specs.push_back(spec);
       } else {
         manifest.dependencies.push_back(line);
+        manifest.dependency_specs.push_back("");
       }
       continue;
     }
@@ -124,8 +287,11 @@ static bool write_havel_toml(const fs::path &path, const PackageManifest &m) {
 
   if (!m.dependencies.empty()) {
     f << "\n[dependencies]\n";
-    for (const auto &dep : m.dependencies) {
-      f << dep << " = \"*\"\n";
+    for (size_t i = 0; i < m.dependencies.size(); ++i) {
+      std::string spec = (i < m.dependency_specs.size()) ? m.dependency_specs[i] : "";
+      if (trim(spec).empty() || trim(spec) == "*")
+        spec = "*";
+      f << m.dependencies[i] << " = \"" << spec << "\"\n";
     }
   }
   return true;
@@ -199,6 +365,244 @@ static int cmd_init(const std::vector<std::string> &args) {
   return 0;
 }
 
+// ---------------------------------------------------------------------------
+// Registry, lockfile and resolution
+//
+// Layout (npm/cargo-shaped, filesystem-backed until a network registry
+// exists):
+//   ~/.havel/registry/<name>/<version>/   published package contents
+//   ~/.havel/packages/<name>/             installed package (one version)
+//   ~/.havel/havel.lock                   pin: name <tab> version <tab> source
+//                                        <tab> spec
+//
+// The registry is a directory, so installs work with no server and no
+// network; the lockfile records which version a name resolved to and where
+// it came from, so `update` re-resolves against the same constraint and
+// `remove` can see installed versions. HAVEL_REGISTRY_DIR (and HAVEL_TOOLCHAIN_STORE's
+// sibling) redirect the store for isolated test runs.
+
+static std::string get_registry_dir() {
+  if (const char *env = std::getenv("HAVEL_REGISTRY_DIR")) {
+    std::string v = trim(env);
+    if (!v.empty())
+      return v;
+  }
+  const char *home = std::getenv("HOME");
+  if (!home) {
+    std::cerr << "hpkg: HOME not set" << std::endl;
+    return "";
+  }
+  return (fs::path(home) / ".havel" / "registry").string();
+}
+
+static std::string lock_file_path() {
+  std::string pkgs = get_packages_dir();
+  if (pkgs.empty())
+    return "";
+  return (fs::path(pkgs).parent_path() / "havel.lock").string();
+}
+
+struct LockEntry {
+  std::string name;
+  std::string version;
+  std::string source; // registry path or the local directory installed from
+  std::string spec;   // constraint this version was resolved against
+};
+
+static std::vector<LockEntry> read_lock() {
+  std::vector<LockEntry> out;
+  std::string path = lock_file_path();
+  if (path.empty())
+    return out;
+  std::ifstream f(path);
+  if (!f.is_open())
+    return out;
+  std::string line;
+  while (std::getline(f, line)) {
+    if (line.empty() || line[0] == '#')
+      continue;
+    std::istringstream parts(line);
+    LockEntry e;
+    if (std::getline(parts, e.name, '\t') && std::getline(parts, e.version, '\t') &&
+        std::getline(parts, e.source, '\t') && std::getline(parts, e.spec)) {
+      out.push_back(e);
+    }
+  }
+  return out;
+}
+
+static bool write_lock(const std::vector<LockEntry> &entries) {
+  std::string path = lock_file_path();
+  if (path.empty())
+    return false;
+  std::ofstream f(path, std::ios::trunc);
+  if (!f.is_open())
+    return false;
+  f << "# havel lockfile - name<TAB>version<TAB>source<TAB>spec\n";
+  for (const auto &e : entries)
+    f << e.name << "\t" << e.version << "\t" << e.source << "\t" << e.spec << "\n";
+  return true;
+}
+
+// Add or replace a lock entry (one entry per name: one installed version).
+static void lock_upsert(std::vector<LockEntry> &entries, const LockEntry &e) {
+  for (auto &existing : entries) {
+    if (existing.name == e.name) {
+      existing = e;
+      return;
+    }
+  }
+  entries.push_back(e);
+}
+
+static void lock_remove(std::vector<LockEntry> &entries, const std::string &name) {
+  for (auto it = entries.begin(); it != entries.end();) {
+    it = (it->name == name) ? entries.erase(it) : it + 1;
+  }
+}
+
+// Every version directory published under <name>, ascending.
+static std::vector<std::string> registry_versions(const std::string &name) {
+  std::vector<std::string> out;
+  std::string reg = get_registry_dir();
+  if (reg.empty())
+    return out;
+  fs::path dir = fs::path(reg) / name;
+  std::error_code ec;
+  for (const auto &entry : fs::directory_iterator(dir, ec)) {
+    if (ec)
+      break;
+    if (!entry.is_directory())
+      continue;
+    SemVer v{};
+    if (parse_semver(entry.path().filename().string(), v))
+      out.push_back(entry.path().filename().string());
+  }
+  std::sort(out.begin(), out.end(), [](const std::string &a, const std::string &b) {
+    SemVer va{}, vb{};
+    parse_semver(a, va);
+    parse_semver(b, vb);
+    return compare_semver(va, vb) < 0;
+  });
+  return out;
+}
+
+// Highest published version satisfying the constraint. "" when none does;
+// `available` lists what exists for the error message.
+static std::string resolve_registry_version(const std::string &name, const std::string &spec,
+                                            std::string &available) {
+  available.clear();
+  for (const auto &v : registry_versions(name)) {
+    if (!available.empty())
+      available += ", ";
+    available += v;
+  }
+  std::vector<std::string> versions = registry_versions(name);
+  for (auto it = versions.rbegin(); it != versions.rend(); ++it) {
+    if (satisfies(*it, spec))
+      return *it;
+  }
+  return "";
+}
+
+static std::string manifest_spec(const PackageManifest &m, const std::string &dep) {
+  for (size_t i = 0; i < m.dependencies.size(); ++i) {
+    if (m.dependencies[i] == dep) {
+      std::string s = (i < m.dependency_specs.size()) ? m.dependency_specs[i] : "";
+      return trim(s).empty() ? "*" : s;
+    }
+  }
+  return "*";
+}
+
+// Copy a published registry payload into ~/.havel/packages/<name>.
+static bool copy_payload(const fs::path &dir, const fs::path &dest) {
+  std::error_code ec;
+  fs::remove_all(dest, ec);
+  fs::create_directories(dest, ec);
+  for (const auto &entry : fs::directory_iterator(dir, ec)) {
+    if (ec)
+      break;
+    if (!entry.is_regular_file())
+      continue;
+    fs::copy_file(entry.path(), dest / entry.path().filename(),
+                  fs::copy_options::overwrite_existing, ec);
+  }
+  return !ec;
+}
+
+// Recursive install from the registry. `visiting` guards cycles; returns
+// nonzero on the first unresolved dependency and names it.
+static int install_registry_package(const std::string &name, const std::string &spec,
+                                    std::string &installed_version,
+                                    std::set<std::string> &visiting) {
+  if (visiting.count(name)) {
+    std::cerr << "hpkg: circular dependency: " << name << " is already being installed"
+              << std::endl;
+    return 1;
+  }
+  visiting.insert(name);
+  int rc = 0;
+
+  std::string reg = get_registry_dir();
+  if (reg.empty()) {
+    visiting.erase(name);
+    return 1;
+  }
+
+  std::string available;
+  std::string version = resolve_registry_version(name, spec, available);
+  if (version.empty()) {
+    std::cerr << "hpkg: no version of '" << name << "' satisfies '" << spec << "'";
+    if (!available.empty())
+      std::cerr << " (available: " << available << ")";
+    std::cerr << std::endl;
+    visiting.erase(name);
+    return 1;
+  }
+
+  fs::path src = fs::path(reg) / name / version;
+  fs::path dest = fs::path(get_packages_dir()) / name;
+  if (!copy_payload(src, dest)) {
+    std::cerr << "hpkg: install of " << name << " failed" << std::endl;
+    visiting.erase(name);
+    return 1;
+  }
+  installed_version = version;
+  std::cout << "  installed " << name << "@" << version << std::endl;
+
+  // Recurse into this version's own dependencies, so a broken transitive
+  // dep fails the whole install. This package's lock entry goes down before
+  // the loop, keeping the lock in pre-order (app before its deps).
+  {
+    std::vector<LockEntry> entries = read_lock();
+    lock_upsert(entries, LockEntry{name, version, src.string(), spec});
+    PackageManifest m;
+    if (parse_havel_toml(dest / "havel.toml", m) && !m.dependencies.empty()) {
+      for (size_t i = 0; i < m.dependencies.size(); ++i) {
+        std::string dep_spec = (i < m.dependency_specs.size()) ? m.dependency_specs[i] : "";
+        dep_spec = trim(dep_spec).empty() ? "*" : dep_spec;
+        std::string dep_version;
+        int dep_rc = install_registry_package(m.dependencies[i], dep_spec, dep_version, visiting);
+        if (dep_rc != 0) {
+          rc = dep_rc;
+          break;
+        }
+        lock_upsert(entries, LockEntry{m.dependencies[i], dep_version,
+                                       (fs::path(reg) / m.dependencies[i] / dep_version).string(),
+                                       dep_spec});
+      }
+    }
+    if (rc == 0 && !write_lock(entries)) {
+      std::cerr << "hpkg: cannot write lockfile" << std::endl;
+      rc = 1;
+    }
+  }
+
+  visiting.erase(name);
+  return rc;
+}
+
 static int cmd_install(const std::vector<std::string> &args) {
   if (args.empty()) {
     std::cerr << "hpkg install: specify a package path or name" << std::endl;
@@ -264,6 +668,30 @@ static int cmd_install(const std::vector<std::string> &args) {
         }
       }
 
+      // Path/directory installs resolve their own dependencies from the
+      // registry too (cargo's behavior for path dependencies), and pin the
+      // result in the lockfile with the directory as source.
+      if (!manifest.dependencies.empty()) {
+        for (size_t i = 0; i < manifest.dependencies.size(); ++i) {
+          std::string dep_spec =
+              (i < manifest.dependency_specs.size()) ? manifest.dependency_specs[i] : "";
+          dep_spec = trim(dep_spec).empty() ? "*" : dep_spec;
+          std::string dep_version;
+          std::set<std::string> visiting;
+          if (install_registry_package(manifest.dependencies[i], dep_spec, dep_version, visiting) !=
+              0) {
+            return 1;
+          }
+        }
+      }
+      {
+        std::vector<LockEntry> entries = read_lock();
+        lock_upsert(entries, LockEntry{manifest.name, manifest.version, arg, "*"});
+        if (!write_lock(entries)) {
+          std::cerr << "hpkg: cannot write lockfile" << std::endl;
+          return 1;
+        }
+      }
       std::cout << "installed " << manifest.name << " v" << manifest.version << std::endl;
       continue;
     }
@@ -284,6 +712,45 @@ static int cmd_install(const std::vector<std::string> &args) {
 
       std::cout << "installed " << name << " (single file)" << std::endl;
       continue;
+    }
+
+    // Bare name (optionally name@spec): resolve from the registry, like npm
+    // resolving a package name. Paths above have already taken precedence.
+    if (arg.find('/') == std::string::npos && arg.find('\\') == std::string::npos) {
+      std::string name = arg, spec = "*";
+      auto at = arg.find('@');
+      if (at != std::string::npos && at > 0 && at + 1 < arg.size()) {
+        name = arg.substr(0, at);
+        spec = trim(arg.substr(at + 1));
+      }
+      std::string available;
+      std::string version = resolve_registry_version(name, spec, available);
+      if (!version.empty()) {
+        std::string installed_version;
+        std::set<std::string> visiting;
+        return install_registry_package(name, spec, installed_version, visiting);
+      }
+      // Not published under this constraint: report what exists (an
+      // "already installed" name whose version no longer satisfies a fresh
+      // install request must not silently report success).
+      if (!available.empty()) {
+        std::cerr << "hpkg: no version of '" << name << "' satisfies '" << spec
+                  << "' (available: " << available << ")" << std::endl;
+        return 1;
+      }
+      fs::path installed = fs::path(pkgs_dir) / name;
+      if (fs::exists(installed)) {
+        PackageManifest manifest;
+        fs::path toml = installed / "havel.toml";
+        if (fs::exists(toml) && parse_havel_toml(toml, manifest)) {
+          std::cout << name << " v" << manifest.version << " (already installed)" << std::endl;
+        } else {
+          std::cout << name << " (installed, no manifest)" << std::endl;
+        }
+        continue;
+      }
+      std::cerr << "hpkg: package not found in registry: " << name << std::endl;
+      return 1;
     }
 
     fs::path installed = fs::path(pkgs_dir) / arg;
@@ -387,8 +854,12 @@ static int cmd_publish(const std::vector<std::string> &args) {
   if (!manifest.dependencies.empty()) {
     std::string pkgs_dir = get_packages_dir();
     for (const auto &dep : manifest.dependencies) {
-      fs::path dep_path = fs::path(pkgs_dir) / dep;
-      if (!fs::exists(dep_path)) {
+      bool installed = !pkgs_dir.empty() && fs::exists(fs::path(pkgs_dir) / dep);
+      // npm/cargo publish without every dependency installed: the
+      // consumer's install resolves them. A dependency is publishable when
+      // it is installed OR at least one version is published.
+      bool published = !registry_versions(dep).empty();
+      if (!installed && !published) {
         std::cerr << "hpkg: missing dependency '" << dep << "'" << std::endl;
         std::cerr << "  run 'hpkg install " << dep << "' first" << std::endl;
         return 1;
@@ -420,6 +891,39 @@ static int cmd_publish(const std::vector<std::string> &args) {
     return cmd_install(install_args);
   }
 
+  // Publish to the registry: copy the package into
+  // <registry>/<name>/<version>/. npm refuses re-publishing the same
+  // version, so do the same - an overwrite would silently change what a
+  // lockfile pin means.
+  std::string reg = get_registry_dir();
+  if (reg.empty())
+    return 1;
+  fs::path dest = fs::path(reg) / manifest.name / manifest.version;
+  std::error_code ec;
+  if (fs::exists(dest)) {
+    std::cerr << "hpkg: " << manifest.name << "@" << manifest.version
+              << " is already published; bump the version in havel.toml" << std::endl;
+    return 1;
+  }
+  fs::create_directories(dest, ec);
+  if (ec) {
+    std::cerr << "hpkg: cannot create " << dest.string() << ": " << ec.message() << std::endl;
+    return 1;
+  }
+  fs::copy_file(toml, dest / "havel.toml", fs::copy_options::overwrite_existing, ec);
+  if (ec) {
+    std::cerr << "hpkg: copy havel.toml failed: " << ec.message() << std::endl;
+    return 1;
+  }
+  for (const auto &f : hv_files) {
+    fs::copy_file(cwd / f, dest / f, fs::copy_options::overwrite_existing, ec);
+    if (ec) {
+      std::cerr << "hpkg: copy " << f << " failed: " << ec.message() << std::endl;
+      return 1;
+    }
+  }
+  std::cout << "\npublished " << manifest.name << "@" << manifest.version << " to " << reg
+            << std::endl;
   return 0;
 }
 
@@ -433,22 +937,189 @@ static int cmd_remove(const std::vector<std::string> &args) {
   if (pkgs_dir.empty())
     return 1;
 
-  for (const auto &name : args) {
-    if (name[0] == '-') {
-      std::cerr << "hpkg remove: unknown option " << name << std::endl;
+  bool force = false;
+  std::vector<std::string> names;
+  for (const auto &arg : args) {
+    if (arg == "--force") {
+      force = true;
+      continue;
+    }
+    if (arg[0] == '-') {
+      std::cerr << "hpkg remove: unknown option " << arg << std::endl;
       return 1;
     }
+    names.push_back(arg);
+  }
+  if (names.empty()) {
+    std::cerr << "hpkg remove: specify a package name" << std::endl;
+    return 1;
+  }
 
+  for (const auto &name : names) {
     fs::path pkg_path = fs::path(pkgs_dir) / name;
     if (!fs::exists(pkg_path)) {
       std::cerr << "hpkg: package '" << name << "' not installed" << std::endl;
       return 1;
     }
 
+    // npm/cargo refuse to break a dependent: scan every installed package
+    // for a dependency on this name before removing it.
+    std::vector<std::string> dependents;
+    std::error_code ec;
+    for (const auto &entry : fs::directory_iterator(pkgs_dir, ec)) {
+      if (ec)
+        break;
+      if (!entry.is_directory())
+        continue;
+      std::string other = entry.path().filename().string();
+      if (other == name)
+        continue;
+      PackageManifest m;
+      if (!parse_havel_toml(entry.path() / "havel.toml", m))
+        continue;
+      for (const auto &dep : m.dependencies) {
+        if (dep == name)
+          dependents.push_back(other);
+      }
+    }
+    if (!dependents.empty() && !force) {
+      std::cerr << "hpkg: cannot remove '" << name << "': needed by";
+      for (const auto &d : dependents)
+        std::cerr << " " << d;
+      std::cerr << " (use --force to remove anyway)" << std::endl;
+      return 1;
+    }
+
     std::uintmax_t count = fs::remove_all(pkg_path);
     std::cout << "removed " << name << " (" << count << " files)" << std::endl;
+    std::vector<LockEntry> entries = read_lock();
+    lock_remove(entries, name);
+    write_lock(entries);
   }
 
+  return 0;
+}
+
+// Version ordering for humans: compare_semver's infertility is the only
+// ordering hpkg needs.
+static int compare_version_names(const std::string &a, const std::string &b) {
+  SemVer va{}, vb{};
+  if (!parse_semver(a, va))
+    return -1;
+  if (!parse_semver(b, vb))
+    return 1;
+  return compare_semver(va, vb);
+}
+
+// One tree line plus its dependency subtree. `seen` prevents endless
+// recursion on a cycle; repeats are printed but not descended into.
+static void print_tree_node(const std::string &name, int depth, std::set<std::string> seen) {
+  std::string pkgs_dir = get_packages_dir();
+  fs::path pkg = fs::path(pkgs_dir) / name;
+  std::string version;
+  PackageManifest m;
+  if (parse_havel_toml(pkg / "havel.toml", m) && !m.version.empty())
+    version = m.version;
+  for (int i = 0; i < depth; ++i)
+    std::cout << "  ";
+  std::cout << name;
+  if (!version.empty())
+    std::cout << "@" << version;
+  std::cout << std::endl;
+  if (m.name.empty() || seen.count(name))
+    return;
+  seen.insert(name);
+  for (const auto &dep : m.dependencies)
+    print_tree_node(dep, depth + 1, seen);
+}
+
+// Update: re-resolve a locked package against its recorded spec and install
+// the best available version. Only registry-sourced entries can update; a
+// directory-installed package has no registry version to move to.
+static int cmd_update(const std::vector<std::string> &args) {
+  bool force = false;
+  std::vector<std::string> names;
+  for (const auto &arg : args) {
+    if (arg == "--force") {
+      force = true;
+      continue;
+    }
+    if (arg[0] == '-') {
+      std::cerr << "hpkg update: unknown option " << arg << std::endl;
+      return 1;
+    }
+    names.push_back(arg);
+  }
+
+  std::vector<LockEntry> entries = read_lock();
+  if (entries.empty()) {
+    std::cout << "nothing to update (lockfile is empty)" << std::endl;
+    return 0;
+  }
+  int rc = 0;
+  for (auto &e : entries) {
+    if (!names.empty() && std::find(names.begin(), names.end(), e.name) == names.end())
+      continue;
+    if (e.source.find("/registry/") == std::string::npos && !force) {
+      std::cout << e.name << "@" << e.version << ": not installed from the registry" << std::endl;
+      continue;
+    }
+    std::string spec = trim(e.spec).empty() ? "*" : e.spec;
+    std::string available;
+    std::string best = resolve_registry_version(e.name, spec, available);
+    if (best.empty()) {
+      std::cerr << "hpkg: no version of '" << e.name << "' satisfies '" << spec << "'";
+      if (!available.empty())
+        std::cerr << " (available: " << available << ")";
+      std::cerr << std::endl;
+      rc = 1;
+      continue;
+    }
+    if (compare_version_names(best, e.version) <= 0) {
+      std::cout << e.name << "@" << e.version << ": already up to date" << std::endl;
+      continue;
+    }
+    std::string installed_version;
+    std::set<std::string> visiting;
+    std::string reg = get_registry_dir();
+    if (install_registry_package(e.name, spec, installed_version, visiting) != 0) {
+      rc = 1;
+      continue;
+    }
+    std::cout << "updated " << e.name << ": " << e.version << " -> " << installed_version
+              << std::endl;
+    e.version = installed_version;
+    e.source = (fs::path(reg) / e.name / installed_version).string();
+  }
+  write_lock(entries);
+  return rc;
+}
+
+// Tree: every installed package and its dependency edges, npm ls-shaped.
+static int cmd_tree(const std::vector<std::string> &args) {
+  std::string pkgs_dir = get_packages_dir();
+  if (pkgs_dir.empty())
+    return 1;
+  if (args.empty()) {
+    // Roots: packages no other installed package depends on (plus every
+    // package when nothing forms a cycle).
+    std::vector<LockEntry> entries = read_lock();
+    std::set<std::string> depended;
+    for (const auto &e : entries) {
+      PackageManifest m;
+      if (parse_havel_toml(fs::path(pkgs_dir) / e.name / "havel.toml", m))
+        for (const auto &d : m.dependencies)
+          depended.insert(d);
+    }
+    for (const auto &e : entries) {
+      if (!depended.count(e.name))
+        print_tree_node(e.name, 0, {});
+    }
+    return 0;
+  }
+  for (const auto &name : args) {
+    print_tree_node(name, 0, {});
+  }
   return 0;
 }
 
@@ -1334,11 +2005,17 @@ static void print_usage(const char *prog) {
                "\n"
                "commands:\n"
                "  init [name]          create a new package in current directory\n"
-               "  install <path|name>  install a package from a local directory or .hv file\n"
+               "  install <path|name>  install a package from a local directory, .hv file,\n"
+               "                       registry name, or name@spec (spec: 1.2.3, ^1.2.3,\n"
+               "                       ~1.2.3, >=1.2.3, <2.0.0, or comma-joined chains)\n"
                "  list                 list installed packages\n"
                "  info [name]          show package info (current dir or named package)\n"
-               "  publish [--local]    validate package (and optionally install locally)\n"
-               "  remove <name>        remove an installed package\n"
+               "  publish [--local]    publish to ~/.havel/registry/<name>/<version>\n"
+               "                       (--local installs into ~/.havel/packages instead)\n"
+               "  remove <name>        remove an installed package (--force skips the\n"
+               "                       dependents check)\n"
+               "  update [name...]      re-resolve locked packages against their specs\n"
+               "  tree [name...]        dependency tree of installed packages\n"
                "\n"
                "toolchains (per-commit binaries for regression testing):\n"
                "  toolchain install <ref> [--from <path>] [--repo <path>] [--jobs N]\n"
@@ -1363,7 +2040,10 @@ static void print_usage(const char *prog) {
                "   my-pkg.hv           entry point\n"
                "   *.hv                additional sources\n"
                "\n"
-               "installed packages live in ~/.havel/packages/<name>/\n";
+               "installed packages live in ~/.havel/packages/<name>/\n"
+               "registry lives in ~/.havel/registry/<name>/<version>/\n"
+               "installed pins live in ~/.havel/havel.lock (name<TAB>version<TAB>source<TAB>spec)\n"
+               "HAVEL_REGISTRY_DIR redirects the registry for isolated test runs\n";
 }
 
 int main(int argc, char **argv) {
@@ -1392,6 +2072,10 @@ int main(int argc, char **argv) {
     return cmd_publish(args);
   else if (cmd == "remove")
     return cmd_remove(args);
+  else if (cmd == "update")
+    return cmd_update(args);
+  else if (cmd == "tree")
+    return cmd_tree(args);
   else if (cmd == "help" || cmd == "--help" || cmd == "-h") {
     print_usage(argv[0]);
     return 0;

@@ -119,6 +119,7 @@ nav:
   - API Reference:
       - Host Functions: reference/host-functions.md
       - FFI: reference/ffi.md
+      - Package Manager (hpkg): reference/hpkg.md
       - Error Handling: reference/error-handling.md
       - Extern Types: reference/extern-types.md
   - Contributing:

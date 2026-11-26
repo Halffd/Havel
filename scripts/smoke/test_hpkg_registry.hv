@@ -1,0 +1,227 @@
+// Regression: hpkg registry (publish/install/resolve), lockfile, recursive
+// dependency installation, dependency-aware uninstall and update.
+//
+// What: `hpkg publish` registers a package under
+//       ~/.havel/registry/<name>/<version>/. `hpkg install <name>` or
+//       <name>@spec resolves the best satisfying version, installs its
+//       dependencies first, and pins name/version/source/spec in
+//       ~/.havel/havel.lock. `remove` refuses while another installed
+//       package depends on the name; `update` re-resolves the lock against
+//       its recorded spec; `tree` shows the edges.
+//
+// Why: these were the deferred npm/cargo features. Version resolution
+//       without a test is a guess: "~1.1.0 resolves to 1.1.0 even though
+//       1.2.0 exists", "^1.0.0 installs 1.2.0 but not 2.0.0" and "update
+//       must not cross the ~ bound" must be proven, not assumed.
+//
+// Runs through the real hpkg/havel binaries with HAVEL_REGISTRY_DIR and HOME
+// redirected to scratch dirs, so the developer's real registry, packages and
+// lockfile are never touched. No network: the registry is a directory.
+
+use "fs"
+use "process"
+use "sys"
+
+// Locate hpkg beside the running havel (same convention as the toolchain and
+// package-modules tests: HAVEL_BINARY's directory is the build this suite was
+// compiled from).
+HPGKG = ""
+bindir = sys.env("HAVEL_BINARY")
+if bindir != null && bindir != "" {
+    lastSlash = -1
+    bi = #bindir - 1
+    while bi >= 0 {
+        if bindir[bi:bi+1] == "/" { lastSlash = bi; bi = -1 }
+        bi = bi - 1
+    }
+    if lastSlash > 0 { HPGKG = bindir[0:lastSlash] + "/hpkg" }
+}
+if !fs.isFile(HPGKG) {
+    HPGKG = ""
+    for c in ["${sys.cwd()}/build-debug/hpkg", "${sys.cwd()}/build-release/hpkg",
+              "${sys.cwd()}/hpkg"] {
+        if fs.isFile(c) { HPGKG = c; break }
+    }
+}
+if HPGKG == "" {
+    print("SKIP hpkg_registry: hpkg not built in this configuration")
+    process.exit(0)
+}
+
+TMP = sys.tmpdir() + "/havel_hpkg_reg_" + sys.pid()
+HOME_DIR = TMP + "/home"
+SRC = TMP + "/src"
+REG = TMP + "/registry"
+fs.rmdir(TMP, true)
+fs.mkdirAll(SRC)
+fs.mkdirAll(HOME_DIR)
+fs.mkdirAll(REG)
+
+// Every child runs with HOME and the registry redirected. process.run
+// execs directly (no shell), so the assignments go through env(1).
+ENV = "env HOME=" + HOME_DIR + " HAVEL_REGISTRY_DIR=" + REG
+
+failures = 0
+fn check(name, cond) {
+    if cond {
+        print("PASS " + name)
+    } else {
+        print("FAIL " + name)
+        failures = failures + 1
+    }
+}
+
+// process.run handles compound strings through a shell, but `env VAR=v cd
+// X && cmd` makes env try to exec cd (exit 127), so the whole command goes
+// through sh -c with the env assignments prefixed once.
+fn sh(cmd) { return process.run(ENV + " sh -c '" + cmd + "'") }
+
+fn installed_version(name) {
+    toml = HOME_DIR + "/.havel/packages/" + name + "/havel.toml"
+    if !fs.exists(toml) { return null }
+    text = fs.read(toml)
+    m = text.split("version = \"")
+    if #m < 2 { return null }
+    tail = m[1]
+    return tail.split("\"")[0]
+}
+
+// A fixture package: <SRC>/<dir>/havel.toml + <dir>/<name>.hv. depLines are
+// raw "name = \"spec\"" manifest lines.
+fn write_manifest(dir, name, version, depLines) {
+    fs.mkdirAll(SRC + "/" + dir)
+    body = "[package]\nname = \"" + name + "\"\nversion = \"" + version + "\"\ndescription = \"fixture\"\n"
+    if #depLines > 0 {
+        body = body + "\n[dependencies]\n" + depLines.join("\n") + "\n"
+    }
+    fs.write(SRC + "/" + dir + "/havel.toml", body)
+    fs.write(SRC + "/" + dir + "/" + name + ".hv", "fn " + name + "_tag() { return \"" + version + "\" }\n")
+}
+
+// ---------------------------------------------------------------- fixtures
+// liba 1.0.0/1.1.0/1.2.0/2.0.0; libb 1.0.0/2.0.0/2.1.0 (each depends on
+// liba ^1.0.0); app depends on libb "*" and liba "~1.1.0". The constraints
+// make the resolved version differ from the newest published version:
+// resolution must actually run, not just take latest.
+write_manifest("liba-1.0.0", "liba", "1.0.0", [])
+write_manifest("liba-1.1.0", "liba", "1.1.0", [])
+write_manifest("liba-1.2.0", "liba", "1.2.0", [])
+write_manifest("liba-2.0.0", "liba", "2.0.0", [])
+write_manifest("libb-1.0.0", "libb", "1.0.0", ["liba = \"^1.0.0\""])
+write_manifest("libb-2.0.0", "libb", "2.0.0", ["liba = \"^1.0.0\""])
+write_manifest("libb-2.1.0", "libb", "2.1.0", ["liba = \"^1.0.0\""])
+write_manifest("app-0.1.0", "app", "0.1.0", ["libb = \"*\"", "liba = \"~1.1.0\""])
+
+// ---------------------------------------------------------------- publish
+for d in ["liba-1.0.0", "liba-1.1.0", "liba-1.2.0", "liba-2.0.0", "libb-1.0.0",
+          "libb-2.0.0", "app-0.1.0"] {
+    r = sh("cd " + SRC + "/" + d + " && " + HPGKG + " publish")
+    check("publish " + d, r.exitCode == 0)
+}
+
+// Publishing the same version twice must be refused, not silently
+// overwritten: a lockfile pin means nothing if the version can change.
+r = sh("cd " + SRC + "/liba-1.1.0 && " + HPGKG + " publish")
+check("re-publishing the same version is refused",
+      r.exitCode == 1 && r.stderr.includes("already published"))
+
+// ---------------------------------------------------------------- install
+r = sh(HPGKG + " install app")
+check("install app from registry", r.exitCode == 0 && r.stdout.includes("installed app@0.1.0"))
+
+// Recursive: app -> libb -> liba. libb's "*" takes 2.0.0 and its own
+// ^1.0.0 dep pulls liba 1.2.0; app's own ~1.1.0 then moves liba to 1.1.0.
+for n in ["app", "libb", "liba"] {
+    check("installed " + n, installed_version(n) != null)
+}
+check("app's libb constraint resolves to 2.0.0", installed_version("libb") == "2.0.0")
+check("app's liba constraint ~1.1.0 resolves to 1.1.0, not 1.2.0",
+      installed_version("liba") == "1.1.0")
+check("installed app is 0.1.0", installed_version("app") == "0.1.0")
+
+// The lockfile pins every transitively installed package with its source.
+lock = HOME_DIR + "/.havel/havel.lock"
+check("lockfile written", fs.exists(lock))
+locktext = fs.read(lock)
+check("lockfile pins app@0.1.0", locktext.includes("app\t0.1.0\t"))
+check("lockfile pins libb@2.0.0", locktext.includes("libb\t2.0.0\t"))
+check("lockfile pins liba@1.1.0 (resolved, not newest)", locktext.includes("liba\t1.1.0\t"))
+check("lockfile records the registry source", locktext.includes(REG + "/liba/1.1.0"))
+
+// name@spec form: newest satisfying <2.0.0 is 1.2.0. Double quotes keep
+// the shell inside sh -c from reading the '<' as input redirection.
+r = sh(HPGKG + " install \"liba@<2.0.0\"")
+check("name@spec installs the best satisfying version",
+      r.exitCode == 0 && r.stdout.includes("installed liba@1.2.0"))
+check("liba upgraded to 1.2.0 by name@spec", installed_version("liba") == "1.2.0")
+r = sh(HPGKG + " install app")
+check("reinstalling app moves liba back to 1.1.0", installed_version("liba") == "1.1.0")
+
+// An unsatisfiable constraint must fail naming what exists.
+r = sh(HPGKG + " install liba@^9.0.0")
+check("unsatisfiable constraint fails with available versions",
+      r.exitCode == 1 && r.stderr.includes("no version of 'liba'") && r.stderr.includes("available:"))
+
+// ---------------------------------------------------------------- tree
+r = sh(HPGKG + " tree")
+check("tree shows the resolved dependency edges",
+      r.exitCode == 0 && r.stdout.includes("app@0.1.0") && r.stdout.includes("libb@2.0.0"))
+
+// ---------------------------------------------------------------- caret proof
+// Installing libb alone (spec "*") must pull the newest liba satisfying its
+// own ^1.0.0 dep: 1.2.0, not 2.0.0 and not the lowest 1.0.0.
+r = sh(HPGKG + " remove libb --force")
+r = sh(HPGKG + " remove liba --force")
+r = sh(HPGKG + " install libb")
+check("caret constraint installs newest 1.x (1.2.0), not 2.0.0",
+      installed_version("libb") == "2.0.0" && installed_version("liba") == "1.2.0")
+r = sh(HPGKG + " install app")
+check("app reinstated over the caret-resolved set", installed_version("liba") == "1.1.0")
+
+// ---------------------------------------------------------------- update
+// liba is locked with spec ~1.1.0 (from app's dependency). Publishing 2.0.0
+// must NOT move it: update honors the recorded constraint.
+r = sh(HPGKG + " update liba")
+check("update honors the ~ constraint (no bump to 2.0.0)",
+      r.exitCode == 0 && r.stdout.includes("already up to date"))
+check("liba still 1.1.0 after constrained update", installed_version("liba") == "1.1.0")
+
+// libb is locked with spec "*"; publishing 2.1.0 lets update move it.
+r = sh("cd " + SRC + "/libb-2.1.0 && " + HPGKG + " publish")
+check("publish libb 2.1.0", r.exitCode == 0)
+r = sh(HPGKG + " update libb")
+check("update moves a * package to the newest version",
+      r.exitCode == 0 && r.stdout.includes("updated libb: 2.0.0 -> 2.1.0"))
+check("installed libb is the new version", installed_version("libb") == "2.1.0")
+r = sh(HPGKG + " update libb")
+check("update on the newest version is a no-op",
+      r.exitCode == 0 && r.stdout.includes("already up to date"))
+r = sh(HPGKG + " update nosuchpkg")
+check("update of an unlocked name is a no-op, not an error", r.exitCode == 0)
+
+// ---------------------------------------------------------------- uninstall
+// Updating libb also re-resolved its own ^1.0.0 dependency on liba (now
+// 1.2.0); app's ~1.1.0 restores the 1.1.0 set for this section.
+r = sh(HPGKG + " install app")
+check("app reinstated before uninstall section", installed_version("liba") == "1.1.0")
+
+// npm/cargo refuse to break a dependent: liba is needed by libb and app.
+r = sh(HPGKG + " remove liba")
+check("remove refuses while a dependent exists",
+      r.exitCode == 1 && r.stderr.includes("cannot remove 'liba'") && r.stderr.includes("needed by"))
+check("refused remove leaves the package in place", installed_version("liba") == "1.1.0")
+r = sh(HPGKG + " remove liba --force")
+check("remove --force removes anyway", r.exitCode == 0)
+locktext = fs.read(HOME_DIR + "/.havel/havel.lock")
+check("--force remove drops the lock entry", !locktext.includes("liba\t"))
+r = sh(HPGKG + " install app")
+check("state is restorable after forced removal", installed_version("liba") == "1.1.0")
+
+fs.rmdir(TMP, true)
+
+if failures > 0 {
+    print("FAIL hpkg_registry: " + failures + " check(s) failed")
+    process.exit(1)
+}
+print("PASS hpkg_registry")
+process.exit(0)

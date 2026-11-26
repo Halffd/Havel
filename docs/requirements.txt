@@ -1,0 +1,7 @@
+# mkdocs dependencies for the documentation site (.github/workflows/docs.yml).
+# Pinned to floors, not exact versions: patch/minor updates flow through,
+# but a dropping-the-floor dependency cannot break the site build silently.
+mkdocs-material
+pymdown-extensions
+mkdocs-minify-plugin
+mkdocs-git-revision-date-localized-plugin

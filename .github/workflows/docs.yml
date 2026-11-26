@@ -37,11 +37,14 @@ jobs:
         with:
           python-version: '3.12'
           cache: pip
+          # The cache needs a file to hash; without this the job dies with
+          # "No file matched to **/requirements.txt".
+          cache-dependency-path: docs/requirements.txt
 
       - name: install mkdocs
         run: |
           python -m pip install --upgrade pip
-          pip install mkdocs-material mkdocs-minify-plugin mkdocs-git-revision-date-localized-plugin
+          pip install -r docs/requirements.txt
 
       # --strict: a nav entry pointing at a missing page, or a broken link,
       # fails the build instead of shipping a site with dead pages.

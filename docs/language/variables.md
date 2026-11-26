@@ -21,6 +21,38 @@ VAL = 5            // immutable (uppercase convention)
 | `val x = 5` | Immutable | Immutable binding (preferred) |
 | `const x = 5` | Immutable | Alias for `val` |
 | `VAL = 5` | Immutable | Constants (uppercase convention) |
+| `ref x = 5` | Mutable, reactive | Boxed value; assignment re-fires `when` watchers |
+
+## Reactive Variables (`ref`)
+
+`ref` declares a reactive box: every read of the name returns the current
+value, and every assignment writes through the box, so `when` watchers
+observe the assignment:
+
+```hv
+ref threshold = 0
+
+when threshold >= 5 {
+    print("reached at ${threshold}")
+}
+
+threshold = 3      // watcher does not fire
+threshold = 5      // watcher fires
+```
+
+It is sugar for `threshold = ref(0)` (the box is the `{_val: value}` object
+`ref()` has always created) plus transparent `_val` access on the name. The
+identifier `ref` stays usable as a plain function name — `r = ref(0)`
+followed by `r._val = 10` is the same machinery spelled out, and still
+works.
+
+Rules:
+
+- declare before first use; shadowing a `ref` name is not supported;
+- a declared `ref` may be mutated from inside a function, and `when`
+  watchers in any scope observe it;
+- `ref` names hold the value, not the box — interpolations and arithmetic
+  see the number, so never write `counter._val` for a declared `ref`.
 
 ## Naming Conventions
 

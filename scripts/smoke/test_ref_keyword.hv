@@ -1,0 +1,85 @@
+// Regression: the `ref` declaration keyword.
+//
+// What: `ref x = value` declares a reactive box (the {_val: value} object
+//       that `ref()` has always created) and transparent `_val` access:
+//       reads of `x` compile to `x._val`, assignments write back through
+//       the box, so `when x > N` re-evaluates on assignment without the
+//       caller touching any field.
+//
+// Why: before the keyword this needed the explicit `r = ref(0); r._val = 10`
+//       dance, and the box was invisible to any other code reading `r`.
+//       This pins: (1) reads/compound writes see the value, not the box;
+//       (2) functions mutate the caller's ref; (3) a `when` watcher fires
+//       on the assignment; (4) the legacy `ref(...)` call still parses
+//       (the keyword is contextual, not a reserved word).
+//
+// Expected: PASS, exit 0. No OS input, no fs writes, no processes: the
+// watcher runs on the VM scheduler and the wait is bounded.
+
+use "process"
+
+failures = 0
+fn check(name, cond) {
+    if cond {
+        print("PASS " + name)
+    } else {
+        print("FAIL " + name)
+        failures = failures + 1
+    }
+}
+
+// ------------------------------------------------------------ transparent access
+ref counter = 10
+check("ref declaration assigns the value", counter == 10)
+counter = counter + 5
+check("plain assignment writes through the box", counter == 15)
+counter *= 2
+check("compound assignment writes through the box", counter == 30)
+
+fn mutate(n) {
+    counter = n
+}
+mutate(7)
+check("a function mutates the caller's ref", counter == 7)
+
+// Interpolated read (computed string, the other Value::toString path).
+label = "counter=${counter}"
+check("interpolated reads see the value", label == "counter=7")
+
+// ------------------------------------------------------------ reactivity
+ref level = 0
+fired_at = -1
+
+when level >= 5 {
+    fired_at = level
+}
+
+level = 3
+sleep(50)
+check("watcher not fired below threshold", fired_at == -1)
+level = 5
+waited = time.millis() + 2000
+while fired_at < 0 && time.millis() < waited {
+    sleep(5)
+}
+check("assignment through the keyword re-fires the watcher", fired_at == 5)
+
+// ------------------------------------------------------------ legacy call form
+r = ref(0)
+fired = false
+when r._val > 1 {
+    fired = true
+}
+r._val = 2
+waited = time.millis() + 2000
+while !fired && time.millis() < waited {
+    sleep(5)
+}
+check("legacy ref(...) calls still parse and react", fired)
+
+if failures > 0 {
+    print("FAIL ref_keyword: " + failures + " check(s) failed")
+    process.exit(1)
+}
+print("PASS ref_keyword")
+process.exit(0)

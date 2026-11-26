@@ -10,6 +10,8 @@
 #include <memory>
 #include <stdexcept>
 #include <vector>
+#include <set>
+#include <string>
 #include <sstream>
 
 namespace havel::parser {
@@ -43,8 +45,8 @@ inline bool keywordUsableAsIdentifier(TokenType type) {
 // ============================================================================
 
 static constexpr size_t MAX_PARSER_TOKENS = 5'000'000; // Prevent infinite parsing
-static constexpr int MAX_PARSER_DEPTH = 512; // Prevent stack overflow
-static constexpr size_t MAX_PARSER_ERRORS = 100; // Prevent unbounded error accumulation
+static constexpr int MAX_PARSER_DEPTH = 512;           // Prevent stack overflow
+static constexpr size_t MAX_PARSER_ERRORS = 100;       // Prevent unbounded error accumulation
 
 // ProgressGuard: RAII guard that asserts loop makes forward progress
 // Usage: at the top of a while loop body:
@@ -57,6 +59,7 @@ static constexpr size_t MAX_PARSER_ERRORS = 100; // Prevent unbounded error accu
 class ProgressGuard {
   const size_t start_pos;
   size_t &pos_ref;
+
 public:
   ProgressGuard(size_t start, size_t &pos) : start_pos(start), pos_ref(pos) {}
   ~ProgressGuard() {
@@ -68,10 +71,8 @@ public:
 
 class ParseError : public std::runtime_error {
 public:
-  ParseError(size_t line, size_t column, const std::string &message,
-             size_t length = 1)
-      : std::runtime_error(message), line(line), column(column),
-        length(length) {}
+  ParseError(size_t line, size_t column, const std::string &message, size_t length = 1)
+      : std::runtime_error(message), line(line), column(column), length(length) {}
 
   size_t line;
   size_t column;
@@ -85,7 +86,8 @@ struct DepthGuard {
   int &depth;
   explicit DepthGuard(int &d) : depth(d) {
     if (++depth > MAX_PARSER_DEPTH)
-      throw ParseError(0, 0, "max recursion depth exceeded (" + std::to_string(MAX_PARSER_DEPTH) + ")");
+      throw ParseError(0, 0,
+                       "max recursion depth exceeded (" + std::to_string(MAX_PARSER_DEPTH) + ")");
   }
   ~DepthGuard() { --depth; }
   DepthGuard(const DepthGuard &) = delete;
@@ -155,29 +157,31 @@ inline bool canStartImplicitCallArgument(TokenType type) {
 // Binding power (precedence) levels - higher = tighter binding
 enum class BindingPower : int {
   None = 0,
-  Assignment = 10,    // =, +=, -=, etc.
-  Nullish = 20,       // ??
-  LogicalOr = 30,     // ||
-  LogicalAnd = 40,    // &&
-  Equality = 50,      // ==, !=
-  Comparison = 60,    // <, >, <=, >=
-  Range = 70,         // ..
-  Pipe = 75,          // |
-  BitwiseOr = 80,     // |
-  BitwiseXor = 90,    // ^
-  BitwiseAnd = 100,   // &
-  Shift = 110,        // <<, >>
-  Additive = 120,     // +, -
+  Assignment = 10,      // =, +=, -=, etc.
+  Nullish = 20,         // ??
+  LogicalOr = 30,       // ||
+  LogicalAnd = 40,      // &&
+  Equality = 50,        // ==, !=
+  Comparison = 60,      // <, >, <=, >=
+  Range = 70,           // ..
+  Pipe = 75,            // |
+  BitwiseOr = 80,       // |
+  BitwiseXor = 90,      // ^
+  BitwiseAnd = 100,     // &
+  Shift = 110,          // <<, >>
+  Additive = 120,       // +, -
   Multiplicative = 130, // *, /, %, **
-  Prefix = 140,       // -x, !x, ~x, ++x, --x
-  Postfix = 150,      // x++, x--, x.y, x[y], x()
-  Call = 160,         // function calls
-  Member = 170,       // ., [], ?., !
-  Primary = 180       // literals, identifiers, (expr)
+  Prefix = 140,         // -x, !x, ~x, ++x, --x
+  Postfix = 150,        // x++, x--, x.y, x[y], x()
+  Call = 160,           // function calls
+  Member = 170,         // ., [], ?., !
+  Primary = 180         // literals, identifiers, (expr)
 };
 
 // Convert binding power to int for comparison
-inline int bp(BindingPower power) { return static_cast<int>(power); }
+inline int bp(BindingPower power) {
+  return static_cast<int>(power);
+}
 
 // ============================================================================
 // EXISTING PARSER CLASS
@@ -186,6 +190,12 @@ inline int bp(BindingPower power) { return static_cast<int>(power); }
 class Parser {
 private:
   std::vector<Token> tokens;
+
+  // Names declared with the `ref` keyword. Every later use of the name
+  // compiles as `name._val`, which makes `ref x = 0; when x > 5` re-fire on
+  // assignment. Scoped to the whole parse: a ref must be declared before its
+  // first use, and shadowing a ref name is not supported.
+  std::set<std::string> refNames_;
   size_t position = 0;
 
   // Safety guards
@@ -213,17 +223,16 @@ private:
 
   // Parser context - replaces individual bool flags
   struct ParserContext {
-    bool inInputContext =
-        false; // Inside hotkey block (bare expressions are input)
+    bool inInputContext = false; // Inside hotkey block (bare expressions are input)
     // Inside a `dsl { }` block. Hotkey bodies also set inInputContext, but
     // the dsl control-flow sugar (`*?`, `*:`, `->`, `?;`, `!!`) must not
     // hijack `->` return annotations there.
     bool inDslBlock = false;
-    bool allowBraceSugar = true; // Allow expr { ... } as call sugar
+    bool allowBraceSugar = true;      // Allow expr { ... } as call sugar
     bool suppressBraceLambda = false; // In control-flow conditions: (x) { is not a lambda
-    bool inMatchExpression = false; // Inside match expression (disable arrow functions)
-    bool inConfigContext = false; // Inside config block (bare identifiers are strings)
-    std::string modeContext; // Enclosing mode "name" { ... } for hotkeys
+    bool inMatchExpression = false;   // Inside match expression (disable arrow functions)
+    bool inConfigContext = false;     // Inside config block (bare identifiers are strings)
+    std::string modeContext;          // Enclosing mode "name" { ... } for hotkeys
   };
 
   ParserContext context;
@@ -259,50 +268,52 @@ private:
   void errorAt(const Token &token, const std::string &message);
 
   // Delimiter tracking
-  void pushDelimiter(TokenType type, const Token* token = nullptr);
+  void pushDelimiter(TokenType type, const Token *token = nullptr);
   void popDelimiter(TokenType expected);
   std::optional<DelimiterInfo> getUnclosedDelimiter() const;
   bool checkMismatchedClosingDelimiter();
 
   // Safety checks
   void checkTokenLimit();
-  void checkParseLoop(int &counter, const char* context);
+  void checkParseLoop(int &counter, const char *context);
 
-    // Helper methods - return const references to avoid copies
-    const Token &at(size_t offset = 0) const;
-    const Token &advance();
-    bool notEOF() const;
+  // Helper methods - return const references to avoid copies
+  const Token &at(size_t offset = 0) const;
+  const Token &advance();
+  bool notEOF() const;
 
-    // Create AST node with source location from current token
-    template <typename T, typename... Args>
-    std::unique_ptr<T> makeNode(Args &&...args) {
-        auto node = std::make_unique<T>(std::forward<Args>(args)...);
-        node->line = at().line;
-        node->column = at().column;
-        node->length = at().length;
-        return node;
-    }
+  // Create AST node with source location from current token
+  template <typename T, typename... Args> std::unique_ptr<T> makeNode(Args &&...args) {
+    auto node = std::make_unique<T>(std::forward<Args>(args)...);
+    node->line = at().line;
+    node->column = at().column;
+    node->length = at().length;
+    return node;
+  }
 
-    // Create AST node with source location from a specific token
-    template <typename T, typename... Args>
-    std::unique_ptr<T> makeNodeAt(const Token &tok, Args &&...args) {
-        auto node = std::make_unique<T>(std::forward<Args>(args)...);
-        node->line = tok.line;
-        node->column = tok.column;
-        node->length = tok.length;
-        return node;
-    }
+  // Create AST node with source location from a specific token
+  template <typename T, typename... Args>
+  std::unique_ptr<T> makeNodeAt(const Token &tok, Args &&...args) {
+    auto node = std::make_unique<T>(std::forward<Args>(args)...);
+    node->line = tok.line;
+    node->column = tok.column;
+    node->length = tok.length;
+    return node;
+  }
 
-    // Set location on an existing node from a token
-    template <typename T>
-    void setLoc(T &node, const Token &tok) {
-        node->line = tok.line;
-        node->column = tok.column;
-        node->length = tok.length;
-    }
+  // Set location on an existing node from a token
+  template <typename T> void setLoc(T &node, const Token &tok) {
+    node->line = tok.line;
+    node->column = tok.column;
+    node->length = tok.length;
+  }
 
   // Parser methods (following Tyler's structure)
   std::unique_ptr<ast::Statement> parseStatement();
+
+  // `ref name = value`: declare a reactive box. Sugar for
+  // `name = ref(value)` plus transparent `_val` access on later uses.
+  std::unique_ptr<ast::Statement> parseRefDeclaration();
   std::unique_ptr<ast::Statement>
   parseInlineStatement(); // For inline forms (doesn't skip newlines)
   std::unique_ptr<ast::Expression> parseExpression();
@@ -330,7 +341,8 @@ private:
 
   // Havel-specific parsers
   std::unique_ptr<ast::Statement> parseLetDeclaration();
-        std::unique_ptr<ast::Statement> parseIfStatement(size_t effectiveColumn = 0, size_t chainColumn = 0, bool skipKeyword = false);
+  std::unique_ptr<ast::Statement>
+  parseIfStatement(size_t effectiveColumn = 0, size_t chainColumn = 0, bool skipKeyword = false);
   std::unique_ptr<ast::Statement> parseWhileStatement();
   std::unique_ptr<ast::Statement> parseDoWhileStatement();
   std::unique_ptr<ast::Statement> parseForStatement();
@@ -351,8 +363,7 @@ private:
   // Shares parseOnEventParts with the statement form.
   std::unique_ptr<ast::Expression> parseOnEventExpression();
   // Shared: the event name, optional (arg), optional where-filter, body.
-  bool parseOnEventParts(std::string &nameOut,
-                         std::unique_ptr<ast::Expression> &argOut,
+  bool parseOnEventParts(std::string &nameOut, std::unique_ptr<ast::Expression> &argOut,
                          std::unique_ptr<ast::Expression> &filterOut,
                          std::unique_ptr<ast::Statement> &bodyOut);
   // `emit <name-or-string> [payload]` - syntax sugar over event.publish.
@@ -371,7 +382,8 @@ private:
   std::unique_ptr<ast::Statement> parseSleepStatement();
   std::unique_ptr<ast::Statement> parseInputStatement();
   std::unique_ptr<ast::Statement> parseImplicitInputStatement();
-  std::unique_ptr<ast::Statement> buildImplicitInputStatement(std::unique_ptr<ast::Expression> leadingExpr);
+  std::unique_ptr<ast::Statement>
+  buildImplicitInputStatement(std::unique_ptr<ast::Expression> leadingExpr);
   std::unique_ptr<ast::Statement> parseMoreInputCommands(std::vector<ast::InputCommand> commands);
   std::unique_ptr<ast::Expression> parseGetInputExpression();
   std::unique_ptr<ast::Statement> parseWaitStatement();
@@ -379,18 +391,17 @@ private:
   std::unique_ptr<ast::Expression> parseHotkeyExpression(const Token &hotkeyToken);
   // Hotkey binding with a caller-supplied condition and/or action block.
   std::unique_ptr<ast::Expression>
-  parseHotkeyExpressionEx(const Token &hotkeyToken,
-                          std::unique_ptr<ast::Expression> conditionExpr,
+  parseHotkeyExpressionEx(const Token &hotkeyToken, std::unique_ptr<ast::Expression> conditionExpr,
                           std::unique_ptr<ast::BlockStatement> actionOverride);
   // hotkey("F12", cond, onTrue, onFalse) - the register-style statement form.
-  std::unique_ptr<ast::Statement>
-  buildBranchedHotkeyBinding(ast::CallExpression &call, const Token &token);
+  std::unique_ptr<ast::Statement> buildBranchedHotkeyBinding(ast::CallExpression &call,
+                                                             const Token &token);
   uint64_t hotkey_branch_counter_ = 0;
   std::unique_ptr<ast::Expression> parseTildeHotkeyExpression();
   std::unique_ptr<ast::Statement> parseOnTapOrComboStatement();
   std::unique_ptr<ast::Statement> parseOnKeyDownOrKeyUpStatement();
-  std::unique_ptr<ast::BlockStatement>
-  parseBlockStatement(bool inputContext = false, bool dslBlock = false);
+  std::unique_ptr<ast::BlockStatement> parseBlockStatement(bool inputContext = false,
+                                                           bool dslBlock = false);
   // dsl { } control-flow sugar (dsl.md). Each lowers to a plain AST node the
   // C++ ByteCompiler already supports.
   std::unique_ptr<ast::Statement> parseDslRepeatWhile();
@@ -403,8 +414,7 @@ private:
   // Consecutive same-name clauses merge into one FunctionDeclaration whose
   // body is an if-chain dispatched by guard order. Also upgrades the
   // previously-erroring `call(...) if cond { ... }` to a real if statement.
-  std::unique_ptr<ast::Statement>
-  parseFunctionClauses(std::unique_ptr<ast::Expression> firstCall);
+  std::unique_ptr<ast::Statement> parseFunctionClauses(std::unique_ptr<ast::Expression> firstCall);
   // Last input command batch built inside a dsl block, re-emitted by `!!`.
   std::vector<ast::InputCommand> lastDslInputCmds_;
   void rememberDslInputCmds(const std::vector<ast::InputCommand> &cmds);
@@ -413,31 +423,28 @@ private:
   std::unique_ptr<ast::Statement> parseUseStatement();
   std::unique_ptr<ast::Statement> parseExternBlock();
   std::unique_ptr<ast::Statement> parseDecoratorStatement();
-    std::unique_ptr<ast::Statement> parseAtDecoratorStatement();
+  std::unique_ptr<ast::Statement> parseAtDecoratorStatement();
   std::unique_ptr<ast::Statement> parseWithStatement();
   std::unique_ptr<ast::Statement> parseConfigBlock();
   std::unique_ptr<ast::Statement> parseDevicesBlock();
   std::unique_ptr<ast::Statement> parseModeDefinition(); // mode name { ... }
-  std::unique_ptr<ast::Statement>
-  parseModeBlock(); // mode name { statements } (shorthand)
- std::unique_ptr<ast::Statement> parseModesBlock(); // modes { ... }
- std::unique_ptr<ast::Statement> parseConfigSection();
+  std::unique_ptr<ast::Statement> parseModeBlock();      // mode name { statements } (shorthand)
+  std::unique_ptr<ast::Statement> parseModesBlock();     // modes { ... }
+  std::unique_ptr<ast::Statement> parseConfigSection();
 
-    // Type system parsers
-    std::unique_ptr<ast::Statement> parseStructDeclaration();
-    std::unique_ptr<ast::Statement> parseClassDeclaration();
-    std::unique_ptr<ast::Statement> parseEnumDeclaration();
-    std::unique_ptr<ast::Statement> parseTraitDeclaration();
-    std::unique_ptr<ast::Statement> parseProtocolDeclaration();
-    std::unique_ptr<ast::Statement> parseImplDeclaration();
-	std::unique_ptr<ast::TypeDefinition> parseTypeDefinition();
-	std::unique_ptr<ast::TypeAnnotation> parseTypeAnnotation();
-	std::vector<ast::TypeParam> parseTypeParameterList();
-  std::pair<std::vector<ast::StructFieldDef>,
-  std::vector<std::unique_ptr<ast::StructMethodDef>>>
+  // Type system parsers
+  std::unique_ptr<ast::Statement> parseStructDeclaration();
+  std::unique_ptr<ast::Statement> parseClassDeclaration();
+  std::unique_ptr<ast::Statement> parseEnumDeclaration();
+  std::unique_ptr<ast::Statement> parseTraitDeclaration();
+  std::unique_ptr<ast::Statement> parseProtocolDeclaration();
+  std::unique_ptr<ast::Statement> parseImplDeclaration();
+  std::unique_ptr<ast::TypeDefinition> parseTypeDefinition();
+  std::unique_ptr<ast::TypeAnnotation> parseTypeAnnotation();
+  std::vector<ast::TypeParam> parseTypeParameterList();
+  std::pair<std::vector<ast::StructFieldDef>, std::vector<std::unique_ptr<ast::StructMethodDef>>>
   parseStructMembers(bool isColonBody = false, size_t colonBaseIndent = 0);
-  std::pair<std::vector<ast::ClassFieldDef>,
-  std::vector<std::unique_ptr<ast::ClassMethodDef>>>
+  std::pair<std::vector<ast::ClassFieldDef>, std::vector<std::unique_ptr<ast::ClassMethodDef>>>
   parseClassMembers(bool isColonBody = false, size_t colonBaseIndent = 0);
   std::vector<ast::EnumVariantDef> parseEnumVariants();
 
@@ -453,54 +460,48 @@ private:
   std::unique_ptr<ast::Expression> parseAdditive();
   std::unique_ptr<ast::Expression> parseMultiplicative();
   std::unique_ptr<ast::Expression> parseUnary();
-  std::unique_ptr<ast::Expression>
-  parseCallExpression(std::unique_ptr<ast::Expression> callee);
-  std::unique_ptr<ast::Expression>
-  parseMemberExpression(std::unique_ptr<ast::Expression> object);
-  std::unique_ptr<ast::Expression>
-  parseIndexExpression(std::unique_ptr<ast::Expression> object);
+  std::unique_ptr<ast::Expression> parseCallExpression(std::unique_ptr<ast::Expression> callee);
+  std::unique_ptr<ast::Expression> parseMemberExpression(std::unique_ptr<ast::Expression> object);
+  std::unique_ptr<ast::Expression> parseIndexExpression(std::unique_ptr<ast::Expression> object);
   std::unique_ptr<ast::Expression> parseArrayLiteral();
   std::unique_ptr<ast::Expression> parseObjectLiteral(bool unsorted = false);
   std::unique_ptr<ast::Expression> parseBlockExpression();
   std::unique_ptr<ast::Expression> parseIfExpression();
   std::unique_ptr<ast::Expression> parseArrayPattern();
   std::unique_ptr<ast::Expression> parseObjectPattern();
-  
+
   // Pattern parsing for match expressions
   std::unique_ptr<ast::Expression> parsePattern();
   std::unique_ptr<ast::Expression> parsePatternAtom();
   std::unique_ptr<ast::Expression> parseArrayPatternForMatch();
   std::unique_ptr<ast::Expression> parseObjectPatternForMatch();
-  
+
   std::unique_ptr<ast::Statement> parseTryStatement();
   std::unique_ptr<ast::Statement> parseThrowStatement();
   std::unique_ptr<ast::Statement> parseDelStatement();
   std::unique_ptr<ast::Statement> parseDSLSleep();
   std::unique_ptr<ast::Statement> parseUIDeclaration();
-  void parseUIElementDeclaration(
-      const std::string &parentVar, bool addToParent,
-      std::vector<std::unique_ptr<ast::Statement>> &statements);
-  std::unique_ptr<ast::Expression> parseLambdaFromParams(
-      std::vector<std::unique_ptr<ast::FunctionParameter>> params);
+  void parseUIElementDeclaration(const std::string &parentVar, bool addToParent,
+                                 std::vector<std::unique_ptr<ast::Statement>> &statements);
   std::unique_ptr<ast::Expression>
-  parsePostfixExpression(std::unique_ptr<ast::Expression> expr);
+  parseLambdaFromParams(std::vector<std::unique_ptr<ast::FunctionParameter>> params);
+  std::unique_ptr<ast::Expression> parsePostfixExpression(std::unique_ptr<ast::Expression> expr);
   TokenType getBinaryOperatorToken(ast::BinaryOperator op);
 
-    // Helper to create Identifier with source location
-    std::unique_ptr<ast::Identifier> makeIdentifier(const Token &token);
+  // Helper to create Identifier with source location
+  std::unique_ptr<ast::Identifier> makeIdentifier(const Token &token);
 
-    // Check if a token can be used as a field name after @/@@
-    // Keywords like 'val', 'fn', 'type' etc. are valid field names
-    bool isFieldLikeToken(const Token &tok) const;
+  // Check if a token can be used as a field name after @/@@
+  // Keywords like 'val', 'fn', 'type' etc. are valid field names
+  bool isFieldLikeToken(const Token &tok) const;
 
   // Lookahead helper to detect destructuring patterns like {a, b} = obj
   bool isDestructuringPattern() const;
   bool isObjectLiteral() const;
 
   // Condition combination helpers
-  std::unique_ptr<ast::Expression>
-  combineConditions(std::unique_ptr<ast::Expression> left,
-                    std::unique_ptr<ast::Expression> right);
+  std::unique_ptr<ast::Expression> combineConditions(std::unique_ptr<ast::Expression> left,
+                                                     std::unique_ptr<ast::Expression> right);
 
   // ============================================================================
   // PRATT PARSER METHODS (Top-Down Operator Precedence)
@@ -511,8 +512,8 @@ private:
 
   // Continue Pratt parsing with `left` already parsed, so callers that build a
   // node by hand can still absorb the infix/postfix tail of the expression.
-  std::unique_ptr<ast::Expression>
-  parsePrattExpression(int rbp, std::unique_ptr<ast::Expression> left);
+  std::unique_ptr<ast::Expression> parsePrattExpression(int rbp,
+                                                        std::unique_ptr<ast::Expression> left);
 
   // Condition of a hotkey prefix (`X when <cond> =>`) or of a `when` block.
   // Stops before the caller's `=>` / `{` terminator, and understands the
@@ -539,8 +540,7 @@ private:
   std::unique_ptr<ast::Expression> nud(const Token &token);
 
   // Left denotation - parse token in infix/postfix position with left operand
-  std::unique_ptr<ast::Expression> led(const Token &token,
-                                       std::unique_ptr<ast::Expression> left);
+  std::unique_ptr<ast::Expression> led(const Token &token, std::unique_ptr<ast::Expression> left);
 
   // Check if token can start an expression (has nud) - inline for performance
   inline bool canStartExpression(TokenType type) const;

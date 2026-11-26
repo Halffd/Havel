@@ -1216,8 +1216,18 @@ std::unique_ptr<ast::Expression> Parser::nud(const Token &token) {
 
   case TokenType::Identifier:
   case TokenType::Config:
-  case TokenType::Devices:
-    return makeIdentifier(token);
+  case TokenType::Devices: {
+    auto ident = makeIdentifier(token);
+    // A ref-declared name reads as its box's `_val`, so `when x > 5` and
+    // `x + 1` see the current value and `x = v` (a member assignment) writes
+    // back through the box.
+    if (refNames_.count(ident->symbol)) {
+      auto access = makeNodeAt<ast::MemberExpression>(token, std::move(ident),
+                                                      makeNodeAt<ast::Identifier>(token, "_val"));
+      return access;
+    }
+    return ident;
+  }
 
   case TokenType::Is: {
     errorAt(token,
@@ -1621,8 +1631,7 @@ std::unique_ptr<ast::Expression> Parser::nud(const Token &token) {
     // Substitution form `$(cmd)` arrives as a capture token whose value
     // already carries the payload ($!cmd) - it is a complete expression on
     // its own and must not swallow the following statement as its command.
-    if (captureOutput && token.value.size() > 2 &&
-        token.value.rfind("$!", 0) == 0) {
+    if (captureOutput && token.value.size() > 2 && token.value.rfind("$!", 0) == 0) {
       auto cmdExpr = makeNodeAt<ast::StringLiteral>(token, token.value.substr(2), false);
       return makeNodeAt<ast::ShellCommandExpression>(token, std::move(cmdExpr), true);
     }
@@ -2241,10 +2250,9 @@ std::unique_ptr<ast::Expression> Parser::led(const Token &token,
     // '=>'. With a second argument the key also carries a condition:
     //   hotkey("F12", cond) => { ... }
     // Every other call keeps parsing as an ordinary call.
-    if (at().type == TokenType::Arrow && left &&
-        left->kind == ast::NodeType::Identifier && !args.empty() && args[0] &&
-        args[0]->kind == ast::NodeType::StringLiteral && kwargs.empty() &&
-        args.size() <= 2) {
+    if (at().type == TokenType::Arrow && left && left->kind == ast::NodeType::Identifier &&
+        !args.empty() && args[0] && args[0]->kind == ast::NodeType::StringLiteral &&
+        kwargs.empty() && args.size() <= 2) {
       const auto &calleeId = static_cast<const ast::Identifier &>(*left);
       if (calleeId.symbol == "hotkey") {
         const auto &keyLiteral = static_cast<const ast::StringLiteral &>(*args[0]);
@@ -2252,8 +2260,8 @@ std::unique_ptr<ast::Expression> Parser::led(const Token &token,
           failAt(token, "hotkey(\"...\") requires a non-empty key");
           return nullptr;
         }
-        Token keyToken(keyLiteral.value, TokenType::Hotkey, keyLiteral.value,
-                       token.line, token.column);
+        Token keyToken(keyLiteral.value, TokenType::Hotkey, keyLiteral.value, token.line,
+                       token.column);
         std::unique_ptr<ast::Expression> condExpr;
         if (args.size() == 2) {
           condExpr = std::move(args[1]);
@@ -2420,10 +2428,10 @@ std::unique_ptr<ast::Expression> Parser::led(const Token &token,
     // Context-disambiguate: | after expression, followed by callable = pipeline
     // Otherwise, bitwise OR (e.g., 0xF0 | 0x0F)
     auto nextType = at().type;
-    bool isPipeline = (nextType == TokenType::Identifier || nextType == TokenType::OpenParen ||
-                       nextType == TokenType::At || nextType == TokenType::AtAt ||
-                       nextType == TokenType::InterpolatedBacktick ||
-                       nextType == TokenType::Backtick);
+    bool isPipeline =
+        (nextType == TokenType::Identifier || nextType == TokenType::OpenParen ||
+         nextType == TokenType::At || nextType == TokenType::AtAt ||
+         nextType == TokenType::InterpolatedBacktick || nextType == TokenType::Backtick);
     if (isPipeline) {
       auto pipeline = makeNodeAt<ast::PipelineExpression>(
           token, std::vector<std::unique_ptr<ast::Expression>>{});
@@ -2508,7 +2516,8 @@ std::unique_ptr<ast::Expression> Parser::led(const Token &token,
     params.push_back(makeNodeAt<ast::FunctionParameter>(token, std::move(ident), std::nullopt,
                                                         std::nullopt, false));
 
-    std::unique_ptr<ast::LambdaExpression> _lam = makeNodeAt<ast::LambdaExpression>(token, std::move(params), std::move(body));
+    std::unique_ptr<ast::LambdaExpression> _lam =
+        makeNodeAt<ast::LambdaExpression>(token, std::move(params), std::move(body));
 
     ast::setLambdaContainsYield(*_lam);
 
@@ -2542,7 +2551,8 @@ std::unique_ptr<ast::Expression> Parser::parseParenthesizedExpression() {
       block->body.push_back(makeNode<ast::ExpressionStatement>(std::move(bodyExpr)));
       body = std::move(block);
     }
-    std::unique_ptr<ast::LambdaExpression> _lam = makeNode<ast::LambdaExpression>(std::move(params), std::move(body));
+    std::unique_ptr<ast::LambdaExpression> _lam =
+        makeNode<ast::LambdaExpression>(std::move(params), std::move(body));
     ast::setLambdaContainsYield(*_lam);
     return _lam;
   }
@@ -2591,7 +2601,8 @@ std::unique_ptr<ast::Expression> Parser::parseParenthesizedExpression() {
       block->body.push_back(makeNode<ast::ExpressionStatement>(std::move(bodyExpr)));
       body = std::move(block);
     }
-    std::unique_ptr<ast::LambdaExpression> _lam = makeNode<ast::LambdaExpression>(std::move(lambdaParams), std::move(body));
+    std::unique_ptr<ast::LambdaExpression> _lam =
+        makeNode<ast::LambdaExpression>(std::move(lambdaParams), std::move(body));
     ast::setLambdaContainsYield(*_lam);
     return _lam;
   }
@@ -2646,7 +2657,8 @@ std::unique_ptr<ast::Expression> Parser::parseParenthesizedExpression() {
   if (isBraceLambda) {
     // Parse lambda body as block (parseBlockStatement expects to see '{')
     std::unique_ptr<ast::Statement> body = parseBlockStatement();
-    std::unique_ptr<ast::LambdaExpression> _lam = makeNode<ast::LambdaExpression>(std::move(braceLambdaParams), std::move(body));
+    std::unique_ptr<ast::LambdaExpression> _lam =
+        makeNode<ast::LambdaExpression>(std::move(braceLambdaParams), std::move(body));
     ast::setLambdaContainsYield(*_lam);
     return _lam;
   }
@@ -2758,7 +2770,8 @@ std::unique_ptr<ast::Expression> Parser::parseLambdaExpression() {
     body->body.push_back(std::move(stmt));
   }
 
-  std::unique_ptr<ast::LambdaExpression> _lam = makeNode<ast::LambdaExpression>(std::move(params), std::move(body));
+  std::unique_ptr<ast::LambdaExpression> _lam =
+      makeNode<ast::LambdaExpression>(std::move(params), std::move(body));
 
   ast::setLambdaContainsYield(*_lam);
 
@@ -3037,6 +3050,16 @@ std::unique_ptr<havel::ast::Statement> Parser::parseInlineStatement() {
   }
 
   // Parse based on current token
+  // `ref name = value`: reactive-box declaration. Contextual: `ref` stays a
+  // normal identifier everywhere else (the ref(0) call still works).
+  if (at().type == havel::TokenType::Identifier && at().value == "ref" &&
+      at(1).type == havel::TokenType::Identifier) {
+    bool ref_decl =
+        at(2).type == havel::TokenType::Assign ||
+        (at(2).type == havel::TokenType::Colon && at(3).type == havel::TokenType::Assign);
+    if (ref_decl)
+      return parseRefDeclaration();
+  }
   switch (at().type) {
   case havel::TokenType::Colon:
     return parseSleepStatement();
@@ -3095,8 +3118,8 @@ std::unique_ptr<havel::ast::Statement> Parser::parseInlineStatement() {
       auto &call = static_cast<ast::CallExpression &>(*expr);
       if (call.callee && call.callee->kind == ast::NodeType::Identifier &&
           static_cast<const ast::Identifier &>(*call.callee).symbol == "hotkey" &&
-          call.args.size() >= 3 && call.args.size() <= 4 && call.kwargs.empty() &&
-          call.args[0] && call.args[0]->kind == ast::NodeType::StringLiteral) {
+          call.args.size() >= 3 && call.args.size() <= 4 && call.kwargs.empty() && call.args[0] &&
+          call.args[0]->kind == ast::NodeType::StringLiteral) {
         auto branched = buildBranchedHotkeyBinding(call, startTok);
         if (branched) {
           return branched;
@@ -3204,21 +3227,19 @@ std::unique_ptr<havel::ast::Statement> Parser::parseStatement() {
     return parseExternBlock();
   }
 
-    // Context-sensitive decorator detection:
-    // [decorator] or [decorator(args)] at statement start = decorator
-    // Must be followed by a declaration (fn, class, etc.)
-    // Uses C#/Rust style bracket syntax to avoid conflict with @ field access
-    // Distinguish from [a, b, c] = ... array destructuring by lookahead:
-    // Decorator: [identifier] followed by declaration
-    // Array: [expression, ...] or [pattern] = value
-    // Pattern: [a, b] (comma indicates array, not decorator)
-    if (at().type == havel::TokenType::OpenBracket &&
-        at(1).type == havel::TokenType::Identifier &&
-        (at(2).type == havel::TokenType::CloseBracket ||
-         at(2).type == havel::TokenType::OpenParen)) {
-        // Lookahead to find what comes after the [...] decorator(s)
-        // Save position and scan forward, consuming all stacked decorator brackets
-        size_t savePos = position;
+  // Context-sensitive decorator detection:
+  // [decorator] or [decorator(args)] at statement start = decorator
+  // Must be followed by a declaration (fn, class, etc.)
+  // Uses C#/Rust style bracket syntax to avoid conflict with @ field access
+  // Distinguish from [a, b, c] = ... array destructuring by lookahead:
+  // Decorator: [identifier] followed by declaration
+  // Array: [expression, ...] or [pattern] = value
+  // Pattern: [a, b] (comma indicates array, not decorator)
+  if (at().type == havel::TokenType::OpenBracket && at(1).type == havel::TokenType::Identifier &&
+      (at(2).type == havel::TokenType::CloseBracket || at(2).type == havel::TokenType::OpenParen)) {
+    // Lookahead to find what comes after the [...] decorator(s)
+    // Save position and scan forward, consuming all stacked decorator brackets
+    size_t savePos = position;
 
     bool isDecorator = false;
     for (;;) {
@@ -3306,6 +3327,16 @@ std::unique_ptr<havel::ast::Statement> Parser::parseStatement() {
     position = savePos;
   }
 
+  // `ref name = value`: reactive-box declaration. Contextual: `ref` stays a
+  // normal identifier everywhere else (the ref(0) call still works).
+  if (at().type == havel::TokenType::Identifier && at().value == "ref" &&
+      at(1).type == havel::TokenType::Identifier) {
+    bool ref_decl =
+        at(2).type == havel::TokenType::Assign ||
+        (at(2).type == havel::TokenType::Colon && at(3).type == havel::TokenType::Assign);
+    if (ref_decl)
+      return parseRefDeclaration();
+  }
   switch (at().type) {
   case havel::TokenType::Hotkey: {
     // dsl { } sugar: '!!' re-emits the previous input command batch. The
@@ -3849,8 +3880,8 @@ std::unique_ptr<havel::ast::Statement> Parser::parseStatement() {
       auto &call = static_cast<ast::CallExpression &>(*expr);
       if (call.callee && call.callee->kind == ast::NodeType::Identifier &&
           static_cast<const ast::Identifier &>(*call.callee).symbol == "hotkey" &&
-          call.args.size() >= 3 && call.args.size() <= 4 && call.kwargs.empty() &&
-          call.args[0] && call.args[0]->kind == ast::NodeType::StringLiteral) {
+          call.args.size() >= 3 && call.args.size() <= 4 && call.kwargs.empty() && call.args[0] &&
+          call.args[0]->kind == ast::NodeType::StringLiteral) {
         auto branched = buildBranchedHotkeyBinding(call, at());
         if (branched) {
           return branched;
@@ -4224,82 +4255,96 @@ std::unique_ptr<havel::ast::Statement> Parser::parseStatement() {
     // then sub-parse the translated statements into this block.
     havel::Token shTok = at();
     advance(); // consume the ShBlock token (value = raw body)
-    auto shTranslation = havel::repl::translateShellBlock(
-        shTok.value, nullptr, havel::repl::TranslateMode::Script);
+    auto shTranslation =
+        havel::repl::translateShellBlock(shTok.value, nullptr, havel::repl::TranslateMode::Script);
     if (!shTranslation.ok)
       failAt(shTok, "sh block: " + shTranslation.error);
     std::string blockSource = shTranslation.source;
     size_t shLine = shTok.line;
-      // Sub-parse each translated statement and splice the resulting AST
-      // statements into a BlockStatement. Token lines restart per statement,
-      // so each is re-anchored to successive lines after the `sh` header to
-      // keep runtime tracebacks pointing inside the block.
-      auto block = makeNode<havel::ast::BlockStatement>();
-      std::string stmt;
-      std::istringstream stream(blockSource);
-      std::string ln;
-      size_t anchor = shLine + 1;
-      auto flushStmt = [&]() {
-        if (stmt.empty())
-          return;
-        havel::Lexer lexer(stmt, debug.lexer);
-        auto savedTokens = tokens;
-        auto savedPosition = position;
-        tokens = lexer.tokenize();
-        position = 0;
-        while (notEOF() && at().type == havel::TokenType::NewLine)
+    // Sub-parse each translated statement and splice the resulting AST
+    // statements into a BlockStatement. Token lines restart per statement,
+    // so each is re-anchored to successive lines after the `sh` header to
+    // keep runtime tracebacks pointing inside the block.
+    auto block = makeNode<havel::ast::BlockStatement>();
+    std::string stmt;
+    std::istringstream stream(blockSource);
+    std::string ln;
+    size_t anchor = shLine + 1;
+    auto flushStmt = [&]() {
+      if (stmt.empty())
+        return;
+      havel::Lexer lexer(stmt, debug.lexer);
+      auto savedTokens = tokens;
+      auto savedPosition = position;
+      tokens = lexer.tokenize();
+      position = 0;
+      while (notEOF() && at().type == havel::TokenType::NewLine)
+        advance();
+      // Re-anchor every token of this statement to its block line.
+      for (auto &t : tokens)
+        t.line = anchor;
+      auto lastTok = tokens.empty() ? nullptr : &tokens.back();
+      (void)lastTok;
+      while (notEOF() && at().type != havel::TokenType::EOF_TOKEN) {
+        if (at().type == havel::TokenType::NewLine || at().type == havel::TokenType::Semicolon) {
           advance();
-        // Re-anchor every token of this statement to its block line.
-        for (auto& t : tokens)
-          t.line = anchor;
-        auto lastTok = tokens.empty() ? nullptr : &tokens.back();
-        (void)lastTok;
-        while (notEOF() && at().type != havel::TokenType::EOF_TOKEN) {
-          if (at().type == havel::TokenType::NewLine || at().type == havel::TokenType::Semicolon) {
-            advance();
-            continue;
-          }
-          auto st = parseStatement();
-          if (st)
-            block->body.push_back(std::move(st));
-          else
-            break;
-        }
-        tokens = std::move(savedTokens);
-        position = savedPosition;
-        stmt.clear();
-        anchor++;
-      };
-      while (std::getline(stream, ln)) {
-        std::string t = ln;
-        while (!t.empty() && (t.front() == ' ' || t.front() == '\t'))
-          t.erase(t.begin());
-        if (t.empty()) {
-          flushStmt();
           continue;
         }
-        if (!stmt.empty())
-          stmt += " ";
-        stmt += t;
-        // A statement ends when braces balance and the line does not end
-        // with an open construct.
-        int depth = 0;
-        bool inS = false, inD = false;
-        for (size_t ci = 0; ci < stmt.size(); ++ci) {
-          char ch = stmt[ci];
-          if (inS) { if (ch == '\'') inS = false; continue; }
-          if (inD) { if (ch == '\\' && ci + 1 < stmt.size()) ci++; else if (ch == '"') inD = false; continue; }
-          if (ch == '\'') inS = true;
-          else if (ch == '"') inD = true;
-          else if (ch == '{' || ch == '(' || ch == '[') depth++;
-          else if (ch == '}' || ch == ')' || ch == ']') depth--;
-        }
-        if (depth <= 0 && !stmt.empty())
-          flushStmt();
+        auto st = parseStatement();
+        if (st)
+          block->body.push_back(std::move(st));
+        else
+          break;
       }
-      flushStmt();
-      return block;
+      tokens = std::move(savedTokens);
+      position = savedPosition;
+      stmt.clear();
+      anchor++;
+    };
+    while (std::getline(stream, ln)) {
+      std::string t = ln;
+      while (!t.empty() && (t.front() == ' ' || t.front() == '\t'))
+        t.erase(t.begin());
+      if (t.empty()) {
+        flushStmt();
+        continue;
+      }
+      if (!stmt.empty())
+        stmt += " ";
+      stmt += t;
+      // A statement ends when braces balance and the line does not end
+      // with an open construct.
+      int depth = 0;
+      bool inS = false, inD = false;
+      for (size_t ci = 0; ci < stmt.size(); ++ci) {
+        char ch = stmt[ci];
+        if (inS) {
+          if (ch == '\'')
+            inS = false;
+          continue;
+        }
+        if (inD) {
+          if (ch == '\\' && ci + 1 < stmt.size())
+            ci++;
+          else if (ch == '"')
+            inD = false;
+          continue;
+        }
+        if (ch == '\'')
+          inS = true;
+        else if (ch == '"')
+          inD = true;
+        else if (ch == '{' || ch == '(' || ch == '[')
+          depth++;
+        else if (ch == '}' || ch == ')' || ch == ']')
+          depth--;
+      }
+      if (depth <= 0 && !stmt.empty())
+        flushStmt();
     }
+    flushStmt();
+    return block;
+  }
   case havel::TokenType::Less:
     if (context.inInputContext) {
       auto expr = parseGetInputExpression();
@@ -4581,9 +4626,9 @@ std::unique_ptr<havel::ast::Statement> Parser::parseFunctionDeclaration() {
 
   auto body = parseBlockStatement();
 
-  auto decl = makeNodeAt<havel::ast::FunctionDeclaration>(keyword, std::move(name), std::move(params),
-                                                     std::move(body), std::move(returnType),
-                                                     std::move(typeParams));
+  auto decl = makeNodeAt<havel::ast::FunctionDeclaration>(
+      keyword, std::move(name), std::move(params), std::move(body), std::move(returnType),
+      std::move(typeParams));
   // Hoisted generator detection: one walk here, instead of one per call to
   // this function inside the compiler. See YieldAnalysis.hpp for why the
   // semantics must stay identical to the old compiler-side walk.
@@ -6042,8 +6087,8 @@ Parser::parseStructMembers(bool isColonBody, size_t colonBaseIndent) {
       // Parse body
       auto body = parseBlockStatement();
 
-      auto _m = makeNode<ast::StructMethodDef>(methodName, std::move(params),
-                                             std::move(body), isConstructor, isOperator);
+      auto _m = makeNode<ast::StructMethodDef>(methodName, std::move(params), std::move(body),
+                                               isConstructor, isOperator);
       if (_m->body) {
         _m->contains_yield = ast::bodyContainsYield(*_m->body);
       }
@@ -6468,9 +6513,8 @@ Parser::parseClassMembers(bool isColonBody, size_t colonBaseIndent) {
       // Check if this is a constructor (method name is "init")
       bool isConstructor = (methodName == "init");
 
-      auto _m = makeNode<ast::ClassMethodDef>(methodName, std::move(params),
-                                            std::move(body), isConstructor, isOperator,
-                                            isClassMember);
+      auto _m = makeNode<ast::ClassMethodDef>(methodName, std::move(params), std::move(body),
+                                              isConstructor, isOperator, isClassMember);
       if (_m->body) {
         _m->contains_yield = ast::bodyContainsYield(*_m->body);
       }
@@ -6727,7 +6771,7 @@ std::unique_ptr<havel::ast::Statement> Parser::parseTraitDeclaration() {
     }
 
     auto _t = makeNode<havel::ast::TraitMethod>(std::move(methodName), std::move(params),
-                                             std::move(defaultBody));
+                                                std::move(defaultBody));
     if (_t->defaultBody) {
       _t->contains_yield = ast::bodyContainsYield(*_t->defaultBody);
     }
@@ -6836,7 +6880,7 @@ std::unique_ptr<havel::ast::Statement> Parser::parseProtocolDeclaration() {
     }
 
     auto _t = makeNode<havel::ast::TraitMethod>(std::move(methodName), std::move(params),
-                                             std::move(defaultBody));
+                                                std::move(defaultBody));
     if (_t->defaultBody) {
       _t->contains_yield = ast::bodyContainsYield(*_t->defaultBody);
     }
@@ -8238,6 +8282,53 @@ std::unique_ptr<havel::ast::Statement> Parser::parseOnKeyDownOrKeyUpStatement() 
   }
 }
 
+// `ref name = value` - declare a reactive box.
+//
+// Desugars to `name = ref(value)`: the host function allocates
+// {_val: value}, which is what `when` watchers already observe. The name is
+// then marked so every later expression-position use compiles to `name._val`
+// (nud), making reads see the value and assignments write back through the
+// box. Declaration must precede first use.
+std::unique_ptr<havel::ast::Statement> Parser::parseRefDeclaration() {
+  auto refToken = at();
+  advance(); // consume 'ref'
+
+  if (at().type != havel::TokenType::Identifier) {
+    failAt(at(), "expected a name after 'ref'");
+    return nullptr;
+  }
+  auto nameTok = advance();
+
+  // Optional type annotation, mirroring `val x: int = 5`.
+  if (at().type == havel::TokenType::Colon) {
+    (void)parseTypeAnnotation();
+  }
+
+  if (at().type != havel::TokenType::Assign) {
+    failAt(at(), "expected '=' after 'ref " + nameTok.value + "'");
+    return nullptr;
+  }
+  advance(); // consume '='
+
+  // Record before parsing the value so the initializer may reference
+  // already-declared refs (and this ref's own name is not rewritten inside
+  // its initializer - it is declared here, shadowing nothing).
+  refNames_.insert(nameTok.value);
+
+  auto value = parseExpression();
+
+  // name = ref(value)
+  auto callee = makeNodeAt<havel::ast::Identifier>(refToken, "ref");
+  std::vector<std::unique_ptr<havel::ast::Expression>> callArgs;
+  callArgs.push_back(std::move(value));
+  auto call = makeNodeAt<havel::ast::CallExpression>(refToken, std::move(callee),
+                                                    std::move(callArgs));
+  auto target = makeNodeAt<havel::ast::Identifier>(nameTok, nameTok.value);
+  auto assign = makeNodeAt<havel::ast::AssignmentExpression>(
+      nameTok, std::move(target), std::move(call));
+  return makeNodeAt<havel::ast::ExpressionStatement>(nameTok, std::move(assign));
+}
+
 std::unique_ptr<havel::ast::Statement> Parser::parseLetDeclaration() {
   bool isConst = false;
 
@@ -8346,8 +8437,8 @@ std::unique_ptr<havel::ast::Statement> Parser::parseLetDeclaration() {
 // action cannot capture block-level locals (the action's scope is the
 // enclosing function/module scope) and a closure created inside the
 // action would be rebuilt on every press.
-std::unique_ptr<havel::ast::Statement>
-Parser::buildBranchedHotkeyBinding(ast::CallExpression &call, const Token &token) {
+std::unique_ptr<havel::ast::Statement> Parser::buildBranchedHotkeyBinding(ast::CallExpression &call,
+                                                                          const Token &token) {
   const auto &keyLiteral = static_cast<const ast::StringLiteral &>(*call.args[0]);
   if (keyLiteral.value.empty()) {
     failAt(token, "hotkey(\"...\") requires a non-empty key");
@@ -8385,17 +8476,14 @@ Parser::buildBranchedHotkeyBinding(ast::CallExpression &call, const Token &token
   // if cond { trueName() } else { falseName() }
   auto trueBlock = makeNode<ast::BlockStatement>();
   trueBlock->body.push_back(makeNode<ast::ExpressionStatement>(
-      makeNode<ast::CallExpression>(
-          makeNode<ast::Identifier>(trueName, token.line, token.column),
-          std::vector<std::unique_ptr<ast::Expression>>{})));
+      makeNode<ast::CallExpression>(makeNode<ast::Identifier>(trueName, token.line, token.column),
+                                    std::vector<std::unique_ptr<ast::Expression>>{})));
   auto falseBlock = makeNode<ast::BlockStatement>();
   falseBlock->body.push_back(makeNode<ast::ExpressionStatement>(
-      makeNode<ast::CallExpression>(
-          makeNode<ast::Identifier>(falseName, token.line, token.column),
-          std::vector<std::unique_ptr<ast::Expression>>{})));
+      makeNode<ast::CallExpression>(makeNode<ast::Identifier>(falseName, token.line, token.column),
+                                    std::vector<std::unique_ptr<ast::Expression>>{})));
 
-  auto ifStmt = makeNode<ast::IfStatement>(std::move(call.args[1]),
-                                           std::move(trueBlock),
+  auto ifStmt = makeNode<ast::IfStatement>(std::move(call.args[1]), std::move(trueBlock),
                                            std::move(falseBlock));
 
   auto action = makeNode<ast::BlockStatement>();
@@ -8455,8 +8543,7 @@ Parser::parseHotkeyExpressionEx(const Token &hotkeyToken,
       // Single expression wrapped in a block
       auto expr = parseExpression();
       action = makeNode<havel::ast::BlockStatement>();
-      action->body.push_back(
-          makeNode<havel::ast::ExpressionStatement>(std::move(expr)));
+      action->body.push_back(makeNode<havel::ast::ExpressionStatement>(std::move(expr)));
     }
   }
 
@@ -8474,8 +8561,7 @@ Parser::parseHotkeyExpressionEx(const Token &hotkeyToken,
 
   // Combine conditions if needed
   if (prefixCondition || suffixCondition) {
-    auto finalCondition = combineConditions(std::move(prefixCondition),
-                                            std::move(suffixCondition));
+    auto finalCondition = combineConditions(std::move(prefixCondition), std::move(suffixCondition));
     // Set condition on the binding
     binding->conditionExpr = std::move(finalCondition);
   } else if (conditionExpr) {
@@ -9314,8 +9400,7 @@ std::unique_ptr<havel::ast::Statement> Parser::parseExternBlock() {
     if (at().type == havel::TokenType::Identifier || isKeywordToken(at().type)) {
       std::string typeName = advance().value;
       while (at().type == havel::TokenType::Dot &&
-             (at(1).type == havel::TokenType::Identifier ||
-              isKeywordToken(at(1).type))) {
+             (at(1).type == havel::TokenType::Identifier || isKeywordToken(at(1).type))) {
         advance(); // consume '.'
         typeName += "." + advance().value;
       }
@@ -9325,8 +9410,7 @@ std::unique_ptr<havel::ast::Statement> Parser::parseExternBlock() {
   };
 
   while (notEOF()) {
-    while (isSkippableToken(at()) ||
-           at().type == havel::TokenType::Semicolon ||
+    while (isSkippableToken(at()) || at().type == havel::TokenType::Semicolon ||
            at().type == havel::TokenType::Comma) {
       advance();
     }
@@ -9339,7 +9423,8 @@ std::unique_ptr<havel::ast::Statement> Parser::parseExternBlock() {
       return nullptr;
     }
     advance(); // consume 'fn'
-    while (isSkippableToken(at())) advance();
+    while (isSkippableToken(at()))
+      advance();
 
     if (at().type != havel::TokenType::Identifier && !isKeywordToken(at().type)) {
       failAt(at(), "Expected function name in extern declaration");
@@ -9347,7 +9432,8 @@ std::unique_ptr<havel::ast::Statement> Parser::parseExternBlock() {
     }
     havel::ast::ExternFunctionDecl decl;
     decl.name = advance().value;
-    while (isSkippableToken(at())) advance();
+    while (isSkippableToken(at()))
+      advance();
 
     if (at().type != havel::TokenType::OpenParen) {
       failAt(at(), "Expected '(' after extern function name '" + decl.name + "'");
@@ -9359,7 +9445,8 @@ std::unique_ptr<havel::ast::Statement> Parser::parseExternBlock() {
       while (isSkippableToken(at()) || at().type == havel::TokenType::Comma) {
         advance();
       }
-      if (at().type == havel::TokenType::CloseParen) break;
+      if (at().type == havel::TokenType::CloseParen)
+        break;
       if (at().type != havel::TokenType::Identifier && !isKeywordToken(at().type)) {
         failAt(at(), "Expected parameter name in extern function '" + decl.name + "'");
         return nullptr;
@@ -9369,7 +9456,8 @@ std::unique_ptr<havel::ast::Statement> Parser::parseExternBlock() {
       std::string typeName;
       if (at().type == havel::TokenType::Colon) {
         advance(); // consume ':'
-        while (isSkippableToken(at())) advance();
+        while (isSkippableToken(at()))
+          advance();
         typeName = parseTypeName();
       }
       decl.paramTypes.push_back(typeName);
@@ -9382,10 +9470,12 @@ std::unique_ptr<havel::ast::Statement> Parser::parseExternBlock() {
     }
 
     // Optional return type: -> Type
-    while (isSkippableToken(at())) advance();
+    while (isSkippableToken(at()))
+      advance();
     if (at().type == havel::TokenType::ReturnType) {
       advance(); // consume '->'
-      while (isSkippableToken(at())) advance();
+      while (isSkippableToken(at()))
+        advance();
       decl.returnType = parseTypeName();
     }
 
@@ -10789,7 +10879,8 @@ std::unique_ptr<havel::ast::Expression> Parser::parsePrimaryExpression() {
     }
     auto body = parseBlockStatement();
 
-    std::unique_ptr<havel::ast::LambdaExpression> _lam = makeNode<havel::ast::LambdaExpression>(std::move(params), std::move(body));
+    std::unique_ptr<havel::ast::LambdaExpression> _lam =
+        makeNode<havel::ast::LambdaExpression>(std::move(params), std::move(body));
 
     ast::setLambdaContainsYield(*_lam);
 
@@ -11322,9 +11413,9 @@ std::unique_ptr<havel::ast::Expression> Parser::parseObjectLiteral(bool unsorted
              t == havel::TokenType::Throw || t == havel::TokenType::Del ||
              t == havel::TokenType::True || t == havel::TokenType::False ||
              t == havel::TokenType::Null || t == havel::TokenType::Repeat ||
-             t == havel::TokenType::From ||
-             t == havel::TokenType::String || t == havel::TokenType::MultilineString ||
-             t == havel::TokenType::RegexString || t == havel::TokenType::Number;
+             t == havel::TokenType::From || t == havel::TokenType::String ||
+             t == havel::TokenType::MultilineString || t == havel::TokenType::RegexString ||
+             t == havel::TokenType::Number;
     };
 
     if (isKeyToken(at().type)) {
@@ -12029,7 +12120,8 @@ Parser::parsePostfixExpression(std::unique_ptr<ast::Expression> expr) {
         if (!isObject) {
           auto block = parseBlockStatement();
           std::vector<std::unique_ptr<havel::ast::FunctionParameter>> noParams;
-          auto lambda = makeNode<havel::ast::LambdaExpression>(std::move(noParams), std::move(block));
+          auto lambda =
+              makeNode<havel::ast::LambdaExpression>(std::move(noParams), std::move(block));
           ast::setLambdaContainsYield(*lambda);
           // Append lambda to existing call args
           if (auto *callPtr = dynamic_cast<havel::ast::CallExpression *>(expr.get())) {

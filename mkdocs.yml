@@ -128,6 +128,7 @@ nav:
       - Build System: contributing/build-system.md
       - Directory Structure: contributing/directory-structure.md
       - Testing: contributing/testing.md
+      - Documentation Site: contributing/docs-site.md
       - Code Style: contributing/code-style.md
       - Adding Host Functions: contributing/adding-host-functions.md
       - Extending Self-Hosted Compiler: contributing/extending-self-hosted.md

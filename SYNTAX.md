@@ -111,6 +111,16 @@ Parentheses are optional for zero-parameter functions:
 fn greet { print("hello") }
 ```
 
+By-reference parameters (C# semantics) - the call site must also mark the
+argument, and mismatches are compile errors:
+
+```
+fn accumulate(ref total, delta) { total = total + delta }
+
+sum = 0
+accumulate(ref sum, 10)      // sum == 10
+```
+
 ### Lambda / Arrow Functions
 
 ```

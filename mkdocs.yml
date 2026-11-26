@@ -74,6 +74,12 @@ plugins:
   - minify:
       minify_html: true
 
+# Design plans are working notes kept in the repo, not published: none are in
+# the nav, and git-revision-date-localized warns on files whose only commit
+# is a merge (git log -- <path> hides them), which --strict turns fatal.
+exclude_docs: |
+  plans/
+
 nav:
   - Home: index.md
   - Getting Started:

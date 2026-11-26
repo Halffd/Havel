@@ -18,24 +18,25 @@ struct ClassDefinition;
 struct EnumDefinition;
 
 struct TypeParam {
-	std::string name;
-	std::vector<std::string> upperBounds;
+  std::string name;
+  std::vector<std::string> upperBounds;
 
-	TypeParam() = default;
-	explicit TypeParam(std::string n, std::vector<std::string> bounds = {})
-		: name(std::move(n)), upperBounds(std::move(bounds)) {}
+  TypeParam() = default;
+  explicit TypeParam(std::string n, std::vector<std::string> bounds = {})
+      : name(std::move(n)), upperBounds(std::move(bounds)) {}
 
-	std::string toString() const {
-		std::string result = name;
-		if (!upperBounds.empty()) {
-			result += ": ";
-			for (size_t i = 0; i < upperBounds.size(); ++i) {
-				if (i > 0) result += " & ";
-				result += upperBounds[i];
-			}
-		}
-		return result;
-	}
+  std::string toString() const {
+    std::string result = name;
+    if (!upperBounds.empty()) {
+      result += ": ";
+      for (size_t i = 0; i < upperBounds.size(); ++i) {
+        if (i > 0)
+          result += " & ";
+        result += upperBounds[i];
+      }
+    }
+    return result;
+  }
 };
 struct TraitDeclaration;
 struct ProtocolDeclaration;
@@ -47,7 +48,7 @@ enum class NodeType {
   ImportStatement, // import List from "std/collections"
   UseStatement,    // use io, use media
   ExternBlock,     // extern { fn native(a: int) -> int }
- WithStatement, // with io { ... }
+  WithStatement,   // with io { ... }
 
   // Core functional expressions
   HotkeyBinding,          // F1 => { ... }
@@ -83,10 +84,10 @@ enum class NodeType {
   IfStatement,          // if condition { ... } else { ... }
   IfExpression,         // if condition { expr } else { expr } - returns value
   TernaryExpression,    // condition ? trueValue : falseValue
-    RangeExpression, // 0..10
-    AssignmentExpression, // identifier = value
-    MultipleAssignment, // a, b = value (comma-separated targets)
-    CastExpression, // expr as Type
+  RangeExpression,      // 0..10
+  AssignmentExpression, // identifier = value
+  MultipleAssignment,   // a, b = value (comma-separated targets)
+  CastExpression,       // expr as Type
   ReturnStatement,      // return value;
   WhileStatement,       // while condition { ... }
   ForExpression,        // expr for binding : iterable (generator/comprehension)
@@ -112,37 +113,37 @@ enum class NodeType {
   WhenBlockStatement, // when condition { ... }
   WhenStatement,      // when signal { ... } - reactive when
   // Immutable data structures
-  ListExpression,   // [1, 2, 3]
-  ArrayLiteral,     // [1, 2, 3] - actual implementation
-  ObjectLiteral,    // {name: "John", age: 30} - actual implementation
-  SpreadExpression, // ...array, ...object
-  ConfigBlock,      // config { ... }
-  DevicesBlock,     // devices { ... }
-  ModesBlock,       // modes { ... }
- ModeBlock, // mode name { ... } (shorthand for when mode == "name")
- ConfigSection, // any_identifier { ... }
-  IndexExpression,  // arr[0] or obj["key"]
-  AtExpression,     // @field for self-assignment in methods
-  AtAtExpression,   // @@field for class field access in methods
-  TupleExpression,  // (1, "hello", true)
-  RecordExpression, // {name: "John", age: 30}
-  MapExpression,    // #{key1: val1, key2: val2}
-  SetExpression,    // {1, 2, 3}
+  ListExpression,       // [1, 2, 3]
+  ArrayLiteral,         // [1, 2, 3] - actual implementation
+  ObjectLiteral,        // {name: "John", age: 30} - actual implementation
+  SpreadExpression,     // ...array, ...object
+  ConfigBlock,          // config { ... }
+  DevicesBlock,         // devices { ... }
+  ModesBlock,           // modes { ... }
+  ModeBlock,            // mode name { ... } (shorthand for when mode == "name")
+  ConfigSection,        // any_identifier { ... }
+  IndexExpression,      // arr[0] or obj["key"]
+  AtExpression,         // @field for self-assignment in methods
+  AtAtExpression,       // @@field for class field access in methods
+  TupleExpression,      // (1, "hello", true)
+  RecordExpression,     // {name: "John", age: 30}
+  MapExpression,        // #{key1: val1, key2: val2}
+  SetExpression,        // {1, 2, 3}
   CollectionExpression, // {"a", "b", x: 10} mixed positional and keyed
 
   // Destructuring patterns
-  ListPattern,   // [head|tail], [a, b, c]
-  TuplePattern,  // (x, y)
-  RecordPattern, // {name, age}
-  ObjectPattern, // { x, y: alias } for destructuring
-  ArrayPattern,  // [a, b] for destructuring
-  OrPattern,     // pat1 | pat2 for alternative patterns
-  WildcardPattern, // _ for match statements
-  SpreadPattern, // ..rest for array rest patterns
+  ListPattern,        // [head|tail], [a, b, c]
+  TuplePattern,       // (x, y)
+  RecordPattern,      // {name, age}
+  ObjectPattern,      // { x, y: alias } for destructuring
+  ArrayPattern,       // [a, b] for destructuring
+  OrPattern,          // pat1 | pat2 for alternative patterns
+  WildcardPattern,    // _ for match statements
+  SpreadPattern,      // ..rest for array rest patterns
   ConstructorPattern, // Name(p1, p2) constructor destructuring in match
-  OnEventStatement, // generic on-event subscriptions (file.changed, "my.event")
-  OnEventExpression, // `let w = on file.changed("./x") { ... }` - subscription as a value
-  EmitStatement,    // emit "my.event" { payload } - sugar over event.publish
+  OnEventStatement,   // generic on-event subscriptions (file.changed, "my.event")
+  OnEventExpression,  // `let w = on file.changed("./x") { ... }` - subscription as a value
+  EmitStatement,      // emit "my.event" { payload } - sugar over event.publish
   RelationalCaseTest, // <0, >10, <=2, >=10 relational case test in switch
   // Literals
   StringLiteral,                // "Hello"
@@ -158,31 +159,31 @@ enum class NodeType {
 
   // Functional statements (minimize these)
   ExpressionStatement, // Most things are expressions
-  LetDeclaration, // let x = 5 (immutable)
+  LetDeclaration,      // let x = 5 (immutable)
   FunctionDeclaration, // let add = fn(a, b) -> a + b
-  FunctionParameter, // function parameter with optional default value
-  DecoratorStatement, // @decorator fn foo() { } - decorator applied to declaration
+  FunctionParameter,   // function parameter with optional default value
+  DecoratorStatement,  // @decorator fn foo() { } - decorator applied to declaration
 
-    // Type system (if you want static typing)
-    TypeDeclaration, // type Point = {x: Float, y: Float}
-    UnionType, // type Result = Ok(a) | Error(String)
-    TypeAnnotation, // : List(Int)
-    GenericTypeRef, // List(Int), Result(int, str) - parameterized type reference
-  StructDeclaration, // struct Vec2 { x: Num, y: Num }
-  StructDefinition,  // struct body definition
-  StructFieldDef,    // struct field with optional type
-  StructMethodDef,   // struct method (including constructor)
-  ClassDeclaration,  // class Window { x, y; fn moveTo(x, y) {...} }
-  ClassDefinition,   // class body definition
-  ClassFieldDef,     // class field with optional type
-  ClassMethodDef,    // class method (including constructor)
-  EnumDeclaration,   // enum Color { Red, Green, Blue }
-  EnumDefinition,    // enum body definition
-  EnumVariantDef,    // enum variant with optional payload
-  TraitDeclaration, // trait Drawable { fn draw() }
-  TraitMethod, // trait method (with optional default impl)
+  // Type system (if you want static typing)
+  TypeDeclaration,     // type Point = {x: Float, y: Float}
+  UnionType,           // type Result = Ok(a) | Error(String)
+  TypeAnnotation,      // : List(Int)
+  GenericTypeRef,      // List(Int), Result(int, str) - parameterized type reference
+  StructDeclaration,   // struct Vec2 { x: Num, y: Num }
+  StructDefinition,    // struct body definition
+  StructFieldDef,      // struct field with optional type
+  StructMethodDef,     // struct method (including constructor)
+  ClassDeclaration,    // class Window { x, y; fn moveTo(x, y) {...} }
+  ClassDefinition,     // class body definition
+  ClassFieldDef,       // class field with optional type
+  ClassMethodDef,      // class method (including constructor)
+  EnumDeclaration,     // enum Color { Red, Green, Blue }
+  EnumDefinition,      // enum body definition
+  EnumVariantDef,      // enum variant with optional payload
+  TraitDeclaration,    // trait Drawable { fn draw() }
+  TraitMethod,         // trait method (with optional default impl)
   ProtocolDeclaration, // prot Drawable { fn draw() }
-  ImplDeclaration, // impl Drawable for Circle { ... }
+  ImplDeclaration,     // impl Drawable for Circle { ... }
 
   // Higher-order constructs
   PartialApplication, // add(5, _) creates fn(b) -> 5 + b
@@ -202,19 +203,19 @@ enum class NodeType {
   ForceExpression, // force lazy_value
 
   // Concurrency Primitives
-  ThreadExpression,   // thread { ... }
-  IntervalExpression, // interval 1000 { ... }
+  ThreadExpression,      // thread { ... }
+  IntervalExpression,    // interval 1000 { ... }
   UpdateBlockExpression, // update 150 { ... }
-  TimeoutExpression,  // timeout 1000 { ... }
-  
+  TimeoutExpression,     // timeout 1000 { ... }
+
   // Coroutines
- YieldExpression, // yield or yield(ms) or yield value
-  GoStatement, // go func()
-  GoExpression, // go expr - as expression returning thread object
-  ChannelExpression, // channel()
+  YieldExpression,     // yield or yield(ms) or yield value
+  GoStatement,         // go func()
+  GoExpression,        // go expr - as expression returning thread object
+  ChannelExpression,   // channel()
   WaitGroupExpression, // waitgroup()
-  WaitExpression, // wait expr - join on goroutine or waitgroup
-  DeferStatement, // defer expr
+  WaitExpression,      // wait expr - join on goroutine or waitgroup
+  DeferStatement,      // defer expr
 
   // Special
   ErrorNode,
@@ -259,55 +260,50 @@ struct TypeDefinition : public ASTNode {
 struct TypeReference : public TypeDefinition {
   std::string name;
 
-  TypeReference(const std::string &typeName) : name(typeName) {
-    kind = NodeType::TypeAnnotation;
-  }
+  TypeReference(const std::string &typeName) : name(typeName) { kind = NodeType::TypeAnnotation; }
 
-  std::string toString() const override {
-    return "TypeReference{" + name + "}";
-  }
+  std::string toString() const override { return "TypeReference{" + name + "}"; }
 
-    void accept(ASTVisitor &visitor) const override;
+  void accept(ASTVisitor &visitor) const override;
 };
 
 // Nullable type (e.g., ?Int means Int or null)
 struct NullableType : public TypeDefinition {
-    std::unique_ptr<TypeDefinition> inner;
+  std::unique_ptr<TypeDefinition> inner;
 
-    NullableType(std::unique_ptr<TypeDefinition> innerType)
-        : inner(std::move(innerType)) {
-        kind = NodeType::TypeAnnotation;
-    }
+  NullableType(std::unique_ptr<TypeDefinition> innerType) : inner(std::move(innerType)) {
+    kind = NodeType::TypeAnnotation;
+  }
 
-    std::string toString() const override {
-        return "NullableType{?" + (inner ? inner->toString() : "nullptr") + "}";
-    }
+  std::string toString() const override {
+    return "NullableType{?" + (inner ? inner->toString() : "nullptr") + "}";
+  }
 
-    void accept(ASTVisitor &visitor) const override;
+  void accept(ASTVisitor &visitor) const override;
 };
 
 // Generic/parameterized type reference (e.g., List(Int), Result(int, str), Map(str, int))
 struct GenericTypeRef : public TypeDefinition {
-    std::string name;                                  // Base type name (e.g., "List")
-    std::vector<std::unique_ptr<TypeDefinition>> typeArguments;  // Type arguments
+  std::string name;                                           // Base type name (e.g., "List")
+  std::vector<std::unique_ptr<TypeDefinition>> typeArguments; // Type arguments
 
-    GenericTypeRef(const std::string &baseName,
-                   std::vector<std::unique_ptr<TypeDefinition>> args)
-        : name(baseName), typeArguments(std::move(args)) {
-        kind = NodeType::GenericTypeRef;
+  GenericTypeRef(const std::string &baseName, std::vector<std::unique_ptr<TypeDefinition>> args)
+      : name(baseName), typeArguments(std::move(args)) {
+    kind = NodeType::GenericTypeRef;
+  }
+
+  std::string toString() const override {
+    std::string result = name + "(";
+    for (size_t i = 0; i < typeArguments.size(); ++i) {
+      if (i > 0)
+        result += ", ";
+      result += typeArguments[i] ? typeArguments[i]->toString() : "nullptr";
     }
+    result += ")";
+    return result;
+  }
 
-    std::string toString() const override {
-        std::string result = name + "(";
-        for (size_t i = 0; i < typeArguments.size(); ++i) {
-            if (i > 0) result += ", ";
-            result += typeArguments[i] ? typeArguments[i]->toString() : "nullptr";
-        }
-        result += ")";
-        return result;
-    }
-
-    void accept(ASTVisitor &visitor) const override;
+  void accept(ASTVisitor &visitor) const override;
 };
 
 // Type Annotation (e.g., : List(Int))
@@ -331,12 +327,10 @@ struct StructFieldDef : public ASTNode {
   std::optional<std::unique_ptr<TypeDefinition>> type;
   std::optional<std::unique_ptr<Expression>> defaultValue;
 
-  StructFieldDef(
-      const std::string &fieldName,
-      std::optional<std::unique_ptr<TypeDefinition>> fieldType = std::nullopt,
-      std::optional<std::unique_ptr<Expression>> defaultVal = std::nullopt)
-      : name(fieldName), type(std::move(fieldType)),
-        defaultValue(std::move(defaultVal)) {
+  StructFieldDef(const std::string &fieldName,
+                 std::optional<std::unique_ptr<TypeDefinition>> fieldType = std::nullopt,
+                 std::optional<std::unique_ptr<Expression>> defaultVal = std::nullopt)
+      : name(fieldName), type(std::move(fieldType)), defaultValue(std::move(defaultVal)) {
     kind = NodeType::StructFieldDef;
   }
 
@@ -368,9 +362,8 @@ struct EnumVariantDef : public ASTNode {
   std::string name;
   std::optional<std::unique_ptr<TypeDefinition>> payloadType;
 
-  EnumVariantDef(
-      const std::string &variantName,
-      std::optional<std::unique_ptr<TypeDefinition>> payload = std::nullopt)
+  EnumVariantDef(const std::string &variantName,
+                 std::optional<std::unique_ptr<TypeDefinition>> payload = std::nullopt)
       : name(variantName), payloadType(std::move(payload)) {
     kind = NodeType::EnumVariantDef;
   }
@@ -390,8 +383,7 @@ struct EnumVariantDef : public ASTNode {
 struct EnumDefinition : public TypeDefinition {
   std::vector<EnumVariantDef> variants;
 
-  EnumDefinition(std::vector<EnumVariantDef> variantList = {})
-      : variants(std::move(variantList)) {
+  EnumDefinition(std::vector<EnumVariantDef> variantList = {}) : variants(std::move(variantList)) {
     kind = NodeType::EnumDefinition;
   }
 
@@ -430,30 +422,30 @@ enum class BinaryOperator {
   GreaterEqual,
   Equal,
   NotEqual,
-Is, // identity comparison: a is b (same object reference)
-    IsNot, // negated identity: a is not b
+  Is,    // identity comparison: a is b (same object reference)
+  IsNot, // negated identity: a is not b
   Less,
   Greater,
   And,
   Or,
-  In,          // membership: x in [1,2,3]
-  NotIn,       // negated membership: x not in [1,2,3]
-  Matches,     // regex match: title matches ".*Steam.*"
-  Tilde,       // regex match shorthand: title ~ /pattern/ or title ~ "string"
-  Nullish,     // ?? nullish coalescing: x ?? default
-  ConfigAppend,      // >> config operator
-    BitwiseOr,          // |  bitwise OR (inside (( )))
-    BitwiseXor,         // ^  bitwise XOR (inside (( )))
-    BitwiseAnd,         // &  bitwise AND (inside (( )))
-  BitwiseShiftLeft, // << bitwise left shift (inside (( )))
-  BitwiseShiftRight, // >> bitwise right shift (inside (( )))
-  DivMod, // \\ divmod
-  Remainder, // %% remainder
-  IntDivAssign, // \= integer division assign
-  RemainderAssign, // %%= remainder assign
-  BitwiseAndAssign, // &=
-  BitwiseOrAssign, // |=
-  BitwiseXorAssign, // ^=
+  In,                     // membership: x in [1,2,3]
+  NotIn,                  // negated membership: x not in [1,2,3]
+  Matches,                // regex match: title matches ".*Steam.*"
+  Tilde,                  // regex match shorthand: title ~ /pattern/ or title ~ "string"
+  Nullish,                // ?? nullish coalescing: x ?? default
+  ConfigAppend,           // >> config operator
+  BitwiseOr,              // |  bitwise OR (inside (( )))
+  BitwiseXor,             // ^  bitwise XOR (inside (( )))
+  BitwiseAnd,             // &  bitwise AND (inside (( )))
+  BitwiseShiftLeft,       // << bitwise left shift (inside (( )))
+  BitwiseShiftRight,      // >> bitwise right shift (inside (( )))
+  DivMod,                 // \\ divmod
+  Remainder,              // %% remainder
+  IntDivAssign,           // \= integer division assign
+  RemainderAssign,        // %%= remainder assign
+  BitwiseAndAssign,       // &=
+  BitwiseOrAssign,        // |=
+  BitwiseXorAssign,       // ^=
   BitwiseShiftLeftAssign, // <<=
   BitwiseShiftRightAssign // >>=
 };
@@ -489,10 +481,10 @@ inline std::ostream &operator<<(std::ostream &os, BinaryOperator op) {
     return os << "==";
   case BinaryOperator::NotEqual:
     return os << "!=";
-case BinaryOperator::Is:
-        return os << "is";
-    case BinaryOperator::IsNot:
-        return os << "is not";
+  case BinaryOperator::Is:
+    return os << "is";
+  case BinaryOperator::IsNot:
+    return os << "is not";
   case BinaryOperator::Less:
     return os << "<";
   case BinaryOperator::Greater:
@@ -512,16 +504,16 @@ case BinaryOperator::Is:
   case BinaryOperator::Matches:
     return os << "matches";
   case BinaryOperator::ConfigAppend:
-      return os << ">>";
-    case BinaryOperator::BitwiseOr:
-      return os << "|";
-    case BinaryOperator::BitwiseXor:
-      return os << "^";
-    case BinaryOperator::BitwiseAnd:
-      return os << "&";
-    case BinaryOperator::BitwiseShiftLeft:
-      return os << "<<";
-case BinaryOperator::BitwiseShiftRight:
+    return os << ">>";
+  case BinaryOperator::BitwiseOr:
+    return os << "|";
+  case BinaryOperator::BitwiseXor:
+    return os << "^";
+  case BinaryOperator::BitwiseAnd:
+    return os << "&";
+  case BinaryOperator::BitwiseShiftLeft:
+    return os << "<<";
+  case BinaryOperator::BitwiseShiftRight:
     return os << ">>";
   case BinaryOperator::DivMod:
     return os << "\\\\";
@@ -544,8 +536,8 @@ case BinaryOperator::BitwiseShiftRight:
   case BinaryOperator::BitwiseShiftRightAssign:
     return os << ">>=";
   default:
-      return os << "UNKNOWN_OPERATOR";
-    }
+    return os << "UNKNOWN_OPERATOR";
+  }
 }
 
 struct BinaryExpression : public Expression {
@@ -553,16 +545,14 @@ struct BinaryExpression : public Expression {
   BinaryOperator operator_; // Changed from string
   std::unique_ptr<Expression> right;
 
-  BinaryExpression(std::unique_ptr<Expression> l, BinaryOperator op,
-                   std::unique_ptr<Expression> r)
+  BinaryExpression(std::unique_ptr<Expression> l, BinaryOperator op, std::unique_ptr<Expression> r)
       : left(std::move(l)), operator_(op), right(std::move(r)) {
     kind = NodeType::BinaryExpression;
   }
 
   std::string toString() const override {
-    return "BinaryExpr{" + (left ? left->toString() : "nullptr") + " " +
-           toString(operator_) + " " + (right ? right->toString() : "nullptr") +
-           "}";
+    return "BinaryExpr{" + (left ? left->toString() : "nullptr") + " " + toString(operator_) + " " +
+           (right ? right->toString() : "nullptr") + "}";
   }
 
   std::string toString(BinaryOperator op) const {
@@ -609,10 +599,10 @@ struct BinaryExpression : public Expression {
       return "||";
     case BinaryOperator::In:
       return "in";
-case BinaryOperator::Is:
-        return "is";
+    case BinaryOperator::Is:
+      return "is";
     case BinaryOperator::IsNot:
-        return "is not";
+      return "is not";
     case BinaryOperator::NotIn:
       return "not in";
     case BinaryOperator::Matches:
@@ -633,27 +623,27 @@ case BinaryOperator::Is:
       return "&";
     case BinaryOperator::BitwiseShiftLeft:
       return "<<";
-        case BinaryOperator::BitwiseShiftRight:
-            return ">>";
-        case BinaryOperator::DivMod:
-            return "\\\\";
-        case BinaryOperator::Remainder:
-            return "%%";
-        case BinaryOperator::IntDivAssign:
-            return "\\=";
-        case BinaryOperator::RemainderAssign:
-            return "%%=";
-        case BinaryOperator::BitwiseAndAssign:
-            return "&=";
-        case BinaryOperator::BitwiseOrAssign:
-            return "|=";
-        case BinaryOperator::BitwiseXorAssign:
-            return "^=";
-        case BinaryOperator::BitwiseShiftLeftAssign:
-            return "<<=";
-        case BinaryOperator::BitwiseShiftRightAssign:
-            return ">>=";
-        }
+    case BinaryOperator::BitwiseShiftRight:
+      return ">>";
+    case BinaryOperator::DivMod:
+      return "\\\\";
+    case BinaryOperator::Remainder:
+      return "%%";
+    case BinaryOperator::IntDivAssign:
+      return "\\=";
+    case BinaryOperator::RemainderAssign:
+      return "%%=";
+    case BinaryOperator::BitwiseAndAssign:
+      return "&=";
+    case BinaryOperator::BitwiseOrAssign:
+      return "|=";
+    case BinaryOperator::BitwiseXorAssign:
+      return "^=";
+    case BinaryOperator::BitwiseShiftLeftAssign:
+      return "<<=";
+    case BinaryOperator::BitwiseShiftRightAssign:
+      return ">>=";
+    }
     return "UNKNOWN_OPERATOR";
   }
   void accept(ASTVisitor &visitor) const override;
@@ -684,8 +674,7 @@ struct Identifier : public Expression {
   }
 
   std::string toString() const override {
-    return std::string(isGlobalScope ? "::" : "") + "Identifier{" + symbol +
-           "}";
+    return std::string(isGlobalScope ? "::" : "") + "Identifier{" + symbol + "}";
   }
 
   void accept(ASTVisitor &visitor) const override;
@@ -718,86 +707,84 @@ struct BlockStatement : public Statement {
 // ============================================================================
 
 struct ThreadExpression : public Expression {
-    std::unique_ptr<BlockStatement> body;
-    ThreadExpression(std::unique_ptr<BlockStatement> b) : body(std::move(b)) {
-        kind = NodeType::ThreadExpression;
-    }
-    std::string toString() const override { return "thread { ... }"; }
-    void accept(ASTVisitor &visitor) const override;
+  std::unique_ptr<BlockStatement> body;
+  ThreadExpression(std::unique_ptr<BlockStatement> b) : body(std::move(b)) {
+    kind = NodeType::ThreadExpression;
+  }
+  std::string toString() const override { return "thread { ... }"; }
+  void accept(ASTVisitor &visitor) const override;
 };
 
 struct IntervalExpression : public Expression {
-    std::unique_ptr<Expression> intervalMs;
-    std::unique_ptr<BlockStatement> body;
-    IntervalExpression(std::unique_ptr<Expression> ms, std::unique_ptr<BlockStatement> b)
-        : intervalMs(std::move(ms)), body(std::move(b)) {
-        kind = NodeType::IntervalExpression;
-    }
-    std::string toString() const override { return "interval " + intervalMs->toString() + " { ... }"; }
-    void accept(ASTVisitor &visitor) const override;
+  std::unique_ptr<Expression> intervalMs;
+  std::unique_ptr<BlockStatement> body;
+  IntervalExpression(std::unique_ptr<Expression> ms, std::unique_ptr<BlockStatement> b)
+      : intervalMs(std::move(ms)), body(std::move(b)) {
+    kind = NodeType::IntervalExpression;
+  }
+  std::string toString() const override {
+    return "interval " + intervalMs->toString() + " { ... }";
+  }
+  void accept(ASTVisitor &visitor) const override;
 };
 
 struct UpdateBlockExpression : public Expression {
-    std::unique_ptr<Expression> intervalMs;
-    std::unique_ptr<BlockStatement> body;
-    UpdateBlockExpression(std::unique_ptr<Expression> ms, std::unique_ptr<BlockStatement> b)
-        : intervalMs(std::move(ms)), body(std::move(b)) {
-        kind = NodeType::UpdateBlockExpression;
-    }
-    std::string toString() const override { return "update " + intervalMs->toString() + " { ... }"; }
-    void accept(ASTVisitor &visitor) const override;
+  std::unique_ptr<Expression> intervalMs;
+  std::unique_ptr<BlockStatement> body;
+  UpdateBlockExpression(std::unique_ptr<Expression> ms, std::unique_ptr<BlockStatement> b)
+      : intervalMs(std::move(ms)), body(std::move(b)) {
+    kind = NodeType::UpdateBlockExpression;
+  }
+  std::string toString() const override { return "update " + intervalMs->toString() + " { ... }"; }
+  void accept(ASTVisitor &visitor) const override;
 };
 
 struct TimeoutExpression : public Expression {
-    std::unique_ptr<Expression> delayMs;
-    std::unique_ptr<BlockStatement> body;
-    TimeoutExpression(std::unique_ptr<Expression> ms, std::unique_ptr<BlockStatement> b)
-        : delayMs(std::move(ms)), body(std::move(b)) {
-        kind = NodeType::TimeoutExpression;
-    }
-    std::string toString() const override { return "timeout " + delayMs->toString() + " { ... }"; }
-    void accept(ASTVisitor &visitor) const override;
+  std::unique_ptr<Expression> delayMs;
+  std::unique_ptr<BlockStatement> body;
+  TimeoutExpression(std::unique_ptr<Expression> ms, std::unique_ptr<BlockStatement> b)
+      : delayMs(std::move(ms)), body(std::move(b)) {
+    kind = NodeType::TimeoutExpression;
+  }
+  std::string toString() const override { return "timeout " + delayMs->toString() + " { ... }"; }
+  void accept(ASTVisitor &visitor) const override;
 };
 
 struct YieldExpression : public Expression {
-    std::unique_ptr<Expression> value; // Optional: yield value or yield(ms)
-    YieldExpression(std::unique_ptr<Expression> val = nullptr) : value(std::move(val)) {
-        kind = NodeType::YieldExpression;
-    }
-    std::string toString() const override { return "yield" + (value ? "(" + value->toString() + ")" : ""); }
- void accept(ASTVisitor &visitor) const override;
- };
+  std::unique_ptr<Expression> value; // Optional: yield value or yield(ms)
+  YieldExpression(std::unique_ptr<Expression> val = nullptr) : value(std::move(val)) {
+    kind = NodeType::YieldExpression;
+  }
+  std::string toString() const override {
+    return "yield" + (value ? "(" + value->toString() + ")" : "");
+  }
+  void accept(ASTVisitor &visitor) const override;
+};
 
- struct GoStatement : public Statement {
-    std::unique_ptr<Expression> call; // Must be a CallExpression
-    GoStatement(std::unique_ptr<Expression> c) : call(std::move(c)) {
-        kind = NodeType::GoStatement;
-    }
-    std::string toString() const override { return "go " + call->toString(); }
-    void accept(ASTVisitor &visitor) const override;
+struct GoStatement : public Statement {
+  std::unique_ptr<Expression> call; // Must be a CallExpression
+  GoStatement(std::unique_ptr<Expression> c) : call(std::move(c)) { kind = NodeType::GoStatement; }
+  std::string toString() const override { return "go " + call->toString(); }
+  void accept(ASTVisitor &visitor) const override;
 };
 
 struct GoExpression : public Expression {
-    std::unique_ptr<Expression> call; // Function call or block expression
-    GoExpression(std::unique_ptr<Expression> c) : call(std::move(c)) {
-        kind = NodeType::GoExpression;
-    }
-    std::string toString() const override { return "go(" + call->toString() + ")"; }
-    void accept(ASTVisitor &visitor) const override;
+  std::unique_ptr<Expression> call; // Function call or block expression
+  GoExpression(std::unique_ptr<Expression> c) : call(std::move(c)) {
+    kind = NodeType::GoExpression;
+  }
+  std::string toString() const override { return "go(" + call->toString() + ")"; }
+  void accept(ASTVisitor &visitor) const override;
 };
 
 struct ChannelExpression : public Expression {
-  ChannelExpression() {
-    kind = NodeType::ChannelExpression;
-  }
+  ChannelExpression() { kind = NodeType::ChannelExpression; }
   std::string toString() const override { return "channel()"; }
   void accept(ASTVisitor &visitor) const override;
 };
 
 struct WaitGroupExpression : public Expression {
-  WaitGroupExpression() {
-    kind = NodeType::WaitGroupExpression;
-  }
+  WaitGroupExpression() { kind = NodeType::WaitGroupExpression; }
   std::string toString() const override { return "waitgroup()"; }
   void accept(ASTVisitor &visitor) const override;
 };
@@ -807,7 +794,9 @@ struct DeferStatement : public Statement {
   DeferStatement(std::unique_ptr<Expression> expr) : expression(std::move(expr)) {
     kind = NodeType::DeferStatement;
   }
-  std::string toString() const override { return "defer " + (expression ? expression->toString() : "null"); }
+  std::string toString() const override {
+    return "defer " + (expression ? expression->toString() : "null");
+  }
   void accept(ASTVisitor &visitor) const override;
 };
 
@@ -825,23 +814,21 @@ struct WaitExpression : public Expression {
 struct FunctionParameter : public ASTNode {
   std::unique_ptr<Expression> pattern; // Identifier or destructuring pattern
   std::optional<std::unique_ptr<Expression>> defaultValue;
-  std::optional<std::unique_ptr<TypeAnnotation>>
-      typeAnnotation;      // Optional type annotation
+  std::optional<std::unique_ptr<TypeAnnotation>> typeAnnotation; // Optional type annotation
   bool isVariadic = false; // true for ...args (variadic parameter)
+  bool isRef = false;      // true for `ref x` (C#-style by-reference parameter)
 
-  FunctionParameter(
-      std::unique_ptr<Expression> pat,
-      std::optional<std::unique_ptr<Expression>> defVal = std::nullopt,
-      std::optional<std::unique_ptr<TypeAnnotation>> typeAnn = std::nullopt,
-      bool variadic = false)
+  FunctionParameter(std::unique_ptr<Expression> pat,
+                    std::optional<std::unique_ptr<Expression>> defVal = std::nullopt,
+                    std::optional<std::unique_ptr<TypeAnnotation>> typeAnn = std::nullopt,
+                    bool variadic = false, bool ref = false)
       : pattern(std::move(pat)), defaultValue(std::move(defVal)),
-        typeAnnotation(std::move(typeAnn)), isVariadic(variadic) {
+        typeAnnotation(std::move(typeAnn)), isVariadic(variadic), isRef(ref) {
     kind = NodeType::FunctionParameter;
   }
 
   std::string toString() const override {
-    std::string result =
-        (isVariadic ? "..." : "") + (pattern ? pattern->toString() : "nullptr");
+    std::string result = (isVariadic ? "..." : "") + (pattern ? pattern->toString() : "nullptr");
     if (typeAnnotation) {
       result += ": " + (*typeAnnotation)->toString();
     }
@@ -856,40 +843,35 @@ struct FunctionParameter : public ASTNode {
 
 // Struct method definition (including constructor)
 struct StructMethodDef : public ASTNode {
-    std::string name; // "init" for constructor, otherwise method name, or
-                      // operator like "op_add"
-    std::vector<std::unique_ptr<FunctionParameter>> parameters;
-    std::unique_ptr<BlockStatement> body;
-    bool isConstructor;
-    bool isOperator; // true if this is an operator overload (op +, op ==, etc.)
-    // Parse-time yield-containment flag; see FunctionDeclaration::contains_yield.
-    bool contains_yield = false;
-	std::vector<TypeParam> typeParameters;
+  std::string name; // "init" for constructor, otherwise method name, or
+                    // operator like "op_add"
+  std::vector<std::unique_ptr<FunctionParameter>> parameters;
+  std::unique_ptr<BlockStatement> body;
+  bool isConstructor;
+  bool isOperator; // true if this is an operator overload (op +, op ==, etc.)
+  // Parse-time yield-containment flag; see FunctionDeclaration::contains_yield.
+  bool contains_yield = false;
+  std::vector<TypeParam> typeParameters;
 
-	StructMethodDef(const std::string &methodName,
-		std::vector<std::unique_ptr<FunctionParameter>> params,
-		std::unique_ptr<BlockStatement> b, bool isCtor = false,
-		bool isOp = false,
-		std::vector<TypeParam> typeParams = {})
-		: name(methodName), parameters(std::move(params)), body(std::move(b)),
-		isConstructor(isCtor), isOperator(isOp),
-		typeParameters(std::move(typeParams)) {
-        kind = NodeType::StructMethodDef;
-    }
+  StructMethodDef(const std::string &methodName,
+                  std::vector<std::unique_ptr<FunctionParameter>> params,
+                  std::unique_ptr<BlockStatement> b, bool isCtor = false, bool isOp = false,
+                  std::vector<TypeParam> typeParams = {})
+      : name(methodName), parameters(std::move(params)), body(std::move(b)), isConstructor(isCtor),
+        isOperator(isOp), typeParameters(std::move(typeParams)) {
+    kind = NodeType::StructMethodDef;
+  }
 
   std::string toString() const override {
     if (isOperator) {
-      return "op " + name.substr(3) +
-             "(...) {...}"; // Remove "op_" prefix for display
+      return "op " + name.substr(3) + "(...) {...}"; // Remove "op_" prefix for display
     }
     std::string result = isConstructor ? "fn init(" : "fn " + name + "(";
     for (size_t i = 0; i < parameters.size(); ++i) {
       if (i > 0)
         result += ", ";
-      if (parameters[i]->pattern &&
-          parameters[i]->pattern->kind == NodeType::Identifier) {
-        result +=
-            static_cast<const Identifier &>(*parameters[i]->pattern).symbol;
+      if (parameters[i]->pattern && parameters[i]->pattern->kind == NodeType::Identifier) {
+        result += static_cast<const Identifier &>(*parameters[i]->pattern).symbol;
       } else {
         result += "..."; // Pattern (destructuring)
       }
@@ -907,11 +889,9 @@ struct StructDefinition : public TypeDefinition {
   std::vector<std::unique_ptr<StructMethodDef>> methods;
   bool hasConstructor;
 
-  StructDefinition(
-      std::vector<StructFieldDef> fieldList = {},
-      std::vector<std::unique_ptr<StructMethodDef>> methodList = {})
-      : fields(std::move(fieldList)), methods(std::move(methodList)),
-        hasConstructor(false) {
+  StructDefinition(std::vector<StructFieldDef> fieldList = {},
+                   std::vector<std::unique_ptr<StructMethodDef>> methodList = {})
+      : fields(std::move(fieldList)), methods(std::move(methodList)), hasConstructor(false) {
     for (const auto &method : methods) {
       if (method && method->isConstructor) {
         hasConstructor = true;
@@ -941,13 +921,12 @@ struct ClassFieldDef : public ASTNode {
   std::optional<std::unique_ptr<Expression>> defaultValue;
   bool isClassField = false; // true if @@field (class/static field)
 
-  ClassFieldDef(
-      const std::string &fieldName,
-      std::optional<std::unique_ptr<TypeDefinition>> fieldType = std::nullopt,
-      std::optional<std::unique_ptr<Expression>> defaultVal = std::nullopt,
-      bool isClass = false)
-      : name(fieldName), type(std::move(fieldType)),
-        defaultValue(std::move(defaultVal)), isClassField(isClass) {
+  ClassFieldDef(const std::string &fieldName,
+                std::optional<std::unique_ptr<TypeDefinition>> fieldType = std::nullopt,
+                std::optional<std::unique_ptr<Expression>> defaultVal = std::nullopt,
+                bool isClass = false)
+      : name(fieldName), type(std::move(fieldType)), defaultValue(std::move(defaultVal)),
+        isClassField(isClass) {
     kind = NodeType::ClassFieldDef;
   }
 
@@ -967,40 +946,35 @@ struct ClassFieldDef : public ASTNode {
 
 // Class method definition
 struct ClassMethodDef : public ASTNode {
-    std::string name;
-    std::vector<std::unique_ptr<FunctionParameter>> parameters;
-    std::unique_ptr<BlockStatement> body;
-    bool isConstructor;
-    bool isOperator; // true if this is an operator overload (op +, op ==, etc.)
-    bool isClassMethod = false; // true if @@fn (class/static method)
-    // Parse-time yield-containment flag; see FunctionDeclaration::contains_yield.
-    bool contains_yield = false;
-	std::vector<TypeParam> typeParameters;
+  std::string name;
+  std::vector<std::unique_ptr<FunctionParameter>> parameters;
+  std::unique_ptr<BlockStatement> body;
+  bool isConstructor;
+  bool isOperator;            // true if this is an operator overload (op +, op ==, etc.)
+  bool isClassMethod = false; // true if @@fn (class/static method)
+  // Parse-time yield-containment flag; see FunctionDeclaration::contains_yield.
+  bool contains_yield = false;
+  std::vector<TypeParam> typeParameters;
 
-	ClassMethodDef(const std::string &methodName,
-		std::vector<std::unique_ptr<FunctionParameter>> params,
-		std::unique_ptr<BlockStatement> b, bool isCtor = false,
-		bool isOp = false, bool isClass = false,
-		std::vector<TypeParam> typeParams = {})
-		: name(methodName), parameters(std::move(params)), body(std::move(b)),
-		isConstructor(isCtor), isOperator(isOp), isClassMethod(isClass),
-		typeParameters(std::move(typeParams)) {
-        kind = NodeType::ClassMethodDef;
-    }
+  ClassMethodDef(const std::string &methodName,
+                 std::vector<std::unique_ptr<FunctionParameter>> params,
+                 std::unique_ptr<BlockStatement> b, bool isCtor = false, bool isOp = false,
+                 bool isClass = false, std::vector<TypeParam> typeParams = {})
+      : name(methodName), parameters(std::move(params)), body(std::move(b)), isConstructor(isCtor),
+        isOperator(isOp), isClassMethod(isClass), typeParameters(std::move(typeParams)) {
+    kind = NodeType::ClassMethodDef;
+  }
 
   std::string toString() const override {
     if (isOperator) {
-      return "op " + name.substr(3) +
-             "(...) {...}"; // Remove "op_" prefix for display
+      return "op " + name.substr(3) + "(...) {...}"; // Remove "op_" prefix for display
     }
     std::string result = isConstructor ? "fn init(" : "fn " + name + "(";
     for (size_t i = 0; i < parameters.size(); ++i) {
       if (i > 0)
         result += ", ";
-      if (parameters[i]->pattern &&
-          parameters[i]->pattern->kind == NodeType::Identifier) {
-        result +=
-            static_cast<const Identifier &>(*parameters[i]->pattern).symbol;
+      if (parameters[i]->pattern && parameters[i]->pattern->kind == NodeType::Identifier) {
+        result += static_cast<const Identifier &>(*parameters[i]->pattern).symbol;
       } else {
         result += "..."; // Pattern (destructuring)
       }
@@ -1020,8 +994,7 @@ struct ClassDefinition : public TypeDefinition {
 
   ClassDefinition(std::vector<ClassFieldDef> fieldList = {},
                   std::vector<std::unique_ptr<ClassMethodDef>> methodList = {})
-      : fields(std::move(fieldList)), methods(std::move(methodList)),
-        hasConstructor(false) {
+      : fields(std::move(fieldList)), methods(std::move(methodList)), hasConstructor(false) {
     for (const auto &method : methods) {
       if (method && method->isConstructor) {
         hasConstructor = true;
@@ -1073,16 +1046,13 @@ struct BlockExpression : public Expression {
 struct TraitMethod : public ASTNode {
   std::unique_ptr<Identifier> name;
   std::vector<std::unique_ptr<FunctionParameter>> parameters;
-  std::unique_ptr<BlockStatement>
-      defaultBody; // nullptr if no default implementation
+  std::unique_ptr<BlockStatement> defaultBody; // nullptr if no default implementation
   // Parse-time yield-containment flag; see FunctionDeclaration::contains_yield.
   bool contains_yield = false;
 
-  TraitMethod(std::unique_ptr<Identifier> n,
-              std::vector<std::unique_ptr<FunctionParameter>> params,
+  TraitMethod(std::unique_ptr<Identifier> n, std::vector<std::unique_ptr<FunctionParameter>> params,
               std::unique_ptr<BlockStatement> body = nullptr)
-      : name(std::move(n)), parameters(std::move(params)),
-        defaultBody(std::move(body)) {
+      : name(std::move(n)), parameters(std::move(params)), defaultBody(std::move(body)) {
     kind = NodeType::TraitMethod;
   }
 
@@ -1100,8 +1070,7 @@ struct TraitDeclaration : public Statement {
   std::unique_ptr<Identifier> name;
   std::vector<std::unique_ptr<TraitMethod>> methods;
 
-  TraitDeclaration(std::unique_ptr<Identifier> n,
-                   std::vector<std::unique_ptr<TraitMethod>> meths)
+  TraitDeclaration(std::unique_ptr<Identifier> n, std::vector<std::unique_ptr<TraitMethod>> meths)
       : name(std::move(n)), methods(std::move(meths)) {
     kind = NodeType::TraitDeclaration;
   }
@@ -1157,12 +1126,11 @@ struct HotkeyBinding : public Statement {
   bool suspend = false;
 
   // Inline attributes: mode="name" policy="replace"
-  std::string mode;      // mode attribute (e.g. "default", "gaming")
-  std::string policy;    // policy attribute (drop/replace/queue/coalesce)
+  std::string mode;   // mode attribute (e.g. "default", "gaming")
+  std::string policy; // policy attribute (drop/replace/queue/coalesce)
 
   HotkeyBinding() { kind = NodeType::HotkeyBinding; }
-  HotkeyBinding(std::vector<std::unique_ptr<Expression>> hks,
-                std::unique_ptr<Statement> act)
+  HotkeyBinding(std::vector<std::unique_ptr<Expression>> hks, std::unique_ptr<Statement> act)
       : hotkeys(std::move(hks)), action(std::move(act)) {
     kind = NodeType::HotkeyBinding;
   }
@@ -1208,15 +1176,13 @@ struct ConditionalHotkey : public Statement {
   std::unique_ptr<Expression> condition;
   std::unique_ptr<HotkeyBinding> binding;
 
-  ConditionalHotkey(std::unique_ptr<Expression> cond,
-                    std::unique_ptr<HotkeyBinding> bind)
+  ConditionalHotkey(std::unique_ptr<Expression> cond, std::unique_ptr<HotkeyBinding> bind)
       : condition(std::move(cond)), binding(std::move(bind)) {
     kind = NodeType::ConditionalHotkey;
   }
 
   std::string toString() const override {
-    return "ConditionalHotkey{condition: " +
-           (condition ? condition->toString() : "nullptr") +
+    return "ConditionalHotkey{condition: " + (condition ? condition->toString() : "nullptr") +
            ", binding: " + (binding ? binding->toString() : "nullptr") + "}";
   }
 
@@ -1227,14 +1193,12 @@ struct ConditionalHotkey : public Statement {
 struct HotkeyExpression : public Expression {
   std::unique_ptr<HotkeyBinding> binding;
 
-  HotkeyExpression(std::unique_ptr<HotkeyBinding> b)
-      : binding(std::move(b)) {
+  HotkeyExpression(std::unique_ptr<HotkeyBinding> b) : binding(std::move(b)) {
     kind = NodeType::HotkeyExpression;
   }
 
   std::string toString() const override {
-    return "HotkeyExpression{binding: " +
-           (binding ? binding->toString() : "nullptr") + "}";
+    return "HotkeyExpression{binding: " + (binding ? binding->toString() : "nullptr") + "}";
   }
 
   void accept(ASTVisitor &visitor) const override;
@@ -1245,16 +1209,14 @@ struct WhenBlock : public Statement {
   std::unique_ptr<Expression> condition;
   std::vector<std::unique_ptr<Statement>> statements;
 
-  WhenBlock(std::unique_ptr<Expression> cond,
-            std::vector<std::unique_ptr<Statement>> stmts)
+  WhenBlock(std::unique_ptr<Expression> cond, std::vector<std::unique_ptr<Statement>> stmts)
       : condition(std::move(cond)), statements(std::move(stmts)) {
     kind = NodeType::WhenBlockStatement;
   }
 
   std::string toString() const override {
-    return "WhenBlock{condition: " +
-           (condition ? condition->toString() : "nullptr") + ", statements: [" +
-           std::to_string(statements.size()) + "]}";
+    return "WhenBlock{condition: " + (condition ? condition->toString() : "nullptr") +
+           ", statements: [" + std::to_string(statements.size()) + "]}";
   }
 
   void accept(ASTVisitor &visitor) const override;
@@ -1271,8 +1233,7 @@ struct WhenStatement : public Statement {
   }
 
   std::string toString() const override {
-    return "WhenStatement{trigger: " +
-           (trigger ? trigger->toString() : "nullptr") +
+    return "WhenStatement{trigger: " + (trigger ? trigger->toString() : "nullptr") +
            ", body: " + (body ? body->toString() : "nullptr") + "}";
   }
 
@@ -1283,8 +1244,7 @@ struct WhenStatement : public Statement {
 struct PipelineExpression : public Expression {
   std::vector<std::unique_ptr<Expression>> stages;
 
-  PipelineExpression(std::vector<std::unique_ptr<Expression>> stgs = {})
-      : stages(std::move(stgs)) {
+  PipelineExpression(std::vector<std::unique_ptr<Expression>> stgs = {}) : stages(std::move(stgs)) {
     kind = NodeType::PipelineExpression;
   }
 
@@ -1310,27 +1270,27 @@ struct CallExpression : public Expression {
   std::unique_ptr<Expression> callee;
   std::vector<std::unique_ptr<Expression>> args;
   std::vector<KeywordArg> kwargs; // Keyword arguments
+  // Parallel to args: argsRef[i] marks `f(ref x)` (C#-style by-reference
+  // argument). Empty when no argument carries a ref marker.
+  std::vector<bool> argsRef;
 
   // Super call support for prototype inheritance
   bool isSuperCall = false;
   std::string superMethodName;
 
-  CallExpression(std::unique_ptr<Expression> cal,
-                 std::vector<std::unique_ptr<Expression>> ags = {},
-                 std::vector<KeywordArg> kws = {})
+  CallExpression(std::unique_ptr<Expression> cal, std::vector<std::unique_ptr<Expression>> ags = {},
+                 std::vector<KeywordArg> kws = {}, std::vector<bool> aRef = {})
       : callee(std::move(cal)), args(std::move(ags)), kwargs(std::move(kws)),
-        isSuperCall(false) {
+        argsRef(std::move(aRef)), isSuperCall(false) {
     kind = NodeType::CallExpression;
   }
 
   std::string toString() const override {
     if (isSuperCall) {
-      return "SuperCall{@->" + superMethodName + "(" +
-             std::to_string(args.size()) + " args)}";
+      return "SuperCall{@->" + superMethodName + "(" + std::to_string(args.size()) + " args)}";
     }
     return "CallExpr{" + (callee ? callee->toString() : "nullptr") + "(" +
-           std::to_string(args.size()) + " args, " +
-           std::to_string(kwargs.size()) + " kwargs)}";
+           std::to_string(args.size()) + " args, " + std::to_string(kwargs.size()) + " kwargs)}";
   }
 
   void accept(ASTVisitor &visitor) const override;
@@ -1343,8 +1303,8 @@ struct MemberExpression : public Expression {
   bool isOptional = false;              // true for obj?.field (?. optional chaining)
 
   MemberExpression() { kind = NodeType::MemberExpression; }
-  MemberExpression(std::unique_ptr<Expression> obj,
-                   std::unique_ptr<Expression> prop, bool optional = false)
+  MemberExpression(std::unique_ptr<Expression> obj, std::unique_ptr<Expression> prop,
+                   bool optional = false)
       : object(std::move(obj)), property(std::move(prop)), isOptional(optional) {
     kind = NodeType::MemberExpression;
   }
@@ -1360,7 +1320,7 @@ struct MemberExpression : public Expression {
 // String Literal
 struct StringLiteral : public Expression {
   std::string value;
-  bool isRegex = false;  // true for r"..." regex string literals
+  bool isRegex = false; // true for r"..." regex string literals
 
   StringLiteral(const std::string &val, bool regex = false) : value(val), isRegex(regex) {
     kind = NodeType::StringLiteral;
@@ -1385,25 +1345,22 @@ struct InterpolatedStringExpression : public Expression {
   // Alternating string segments and expressions
   // e.g., "Hello ${name}!" -> ["Hello ", name_expr, "!"]
   struct Segment {
-    bool isString;           // true for string literal, false for expression
-    std::string stringValue; // if isString
+    bool isString;                          // true for string literal, false for expression
+    std::string stringValue;                // if isString
     std::unique_ptr<Expression> expression; // if !isString
 
     Segment(const std::string &str) : isString(true), stringValue(str) {}
-    Segment(std::unique_ptr<Expression> expr)
-        : isString(false), expression(std::move(expr)) {}
+    Segment(std::unique_ptr<Expression> expr) : isString(false), expression(std::move(expr)) {}
   };
 
   std::vector<Segment> segments;
 
-  InterpolatedStringExpression(std::vector<Segment> segs = {})
-      : segments(std::move(segs)) {
+  InterpolatedStringExpression(std::vector<Segment> segs = {}) : segments(std::move(segs)) {
     kind = NodeType::InterpolatedStringExpression;
   }
 
   std::string toString() const override {
-    return "InterpolatedString{" + std::to_string(segments.size()) +
-           " segments}";
+    return "InterpolatedString{" + std::to_string(segments.size()) + " segments}";
   }
 
   void accept(ASTVisitor &visitor) const override;
@@ -1413,13 +1370,9 @@ struct InterpolatedStringExpression : public Expression {
 struct CharLiteral : public Expression {
   char value;
 
-  CharLiteral(char c) : value(c) {
-    kind = NodeType::CharLiteral;
-  }
+  CharLiteral(char c) : value(c) { kind = NodeType::CharLiteral; }
 
-  std::string toString() const override {
-    return "CharLiteral{'" + std::string(1, value) + "'}";
-  }
+  std::string toString() const override { return "CharLiteral{'" + std::string(1, value) + "'}"; }
 
   void accept(ASTVisitor &visitor) const override;
 };
@@ -1439,14 +1392,23 @@ struct RelationalCaseTest : public Expression {
   std::string toString() const override {
     std::string opStr;
     switch (op) {
-    case BinaryOperator::Less: opStr = "<"; break;
-    case BinaryOperator::LessEqual: opStr = "<="; break;
-    case BinaryOperator::Greater: opStr = ">"; break;
-    case BinaryOperator::GreaterEqual: opStr = ">="; break;
-    default: opStr = "?"; break;
+    case BinaryOperator::Less:
+      opStr = "<";
+      break;
+    case BinaryOperator::LessEqual:
+      opStr = "<=";
+      break;
+    case BinaryOperator::Greater:
+      opStr = ">";
+      break;
+    case BinaryOperator::GreaterEqual:
+      opStr = ">=";
+      break;
+    default:
+      opStr = "?";
+      break;
     }
-    return "RelationalCaseTest{" + opStr + " " +
-           (operand ? operand->toString() : "nullptr") + "}";
+    return "RelationalCaseTest{" + opStr + " " + (operand ? operand->toString() : "nullptr") + "}";
   }
 
   void accept(ASTVisitor &visitor) const override;
@@ -1463,10 +1425,8 @@ struct RangePattern : public Expression {
   }
 
   std::string toString() const override {
-    return "RangePattern{" +
-           (start ? start->toString() : "nullptr") +
-           "..=" +
-           (end ? end->toString() : "nullptr") + "}";
+    return "RangePattern{" + (start ? start->toString() : "nullptr") +
+           "..=" + (end ? end->toString() : "nullptr") + "}";
   }
 
   void accept(ASTVisitor &visitor) const override;
@@ -1474,19 +1434,21 @@ struct RangePattern : public Expression {
 
 // Number Literal
 struct NumberLiteral : public Expression {
-    double value;
-    bool was_written_as_float; // true if source had decimal point (e.g., "1.0" vs "1")
+  double value;
+  bool was_written_as_float; // true if source had decimal point (e.g., "1.0" vs "1")
 
-    NumberLiteral(double val, bool as_float = false) : value(val), was_written_as_float(as_float) { kind = NodeType::NumberLiteral; }
+  NumberLiteral(double val, bool as_float = false) : value(val), was_written_as_float(as_float) {
+    kind = NodeType::NumberLiteral;
+  }
 
-    std::string toString() const override {
-        // Use stringstream to avoid trailing zeros for whole numbers
-        std::ostringstream oss;
-        oss << value;
-        return "NumberLiteral{" + oss.str() + "}";
-    }
+  std::string toString() const override {
+    // Use stringstream to avoid trailing zeros for whole numbers
+    std::ostringstream oss;
+    oss << value;
+    return "NumberLiteral{" + oss.str() + "}";
+  }
 
-    void accept(ASTVisitor &visitor) const override;
+  void accept(ASTVisitor &visitor) const override;
 };
 
 // Boolean Literal (true, false)
@@ -1515,13 +1477,9 @@ struct NullLiteral : public Expression {
 struct HotkeyLiteral : public Expression {
   std::string combination;
 
-  HotkeyLiteral(const std::string &combo) : combination(combo) {
-    kind = NodeType::HotkeyLiteral;
-  }
+  HotkeyLiteral(const std::string &combo) : combination(combo) { kind = NodeType::HotkeyLiteral; }
 
-  std::string toString() const override {
-    return "HotkeyLiteral{" + combination + "}";
-  }
+  std::string toString() const override { return "HotkeyLiteral{" + combination + "}"; }
 
   void accept(ASTVisitor &visitor) const override;
 };
@@ -1530,14 +1488,12 @@ struct HotkeyLiteral : public Expression {
 struct ExpressionStatement : public Statement {
   std::unique_ptr<Expression> expression;
   ExpressionStatement() { kind = NodeType::ExpressionStatement; }
-  ExpressionStatement(std::unique_ptr<Expression> expr)
-      : expression(std::move(expr)) {
+  ExpressionStatement(std::unique_ptr<Expression> expr) : expression(std::move(expr)) {
     kind = NodeType::ExpressionStatement;
   }
 
   std::string toString() const override {
-    return "ExpressionStatement{" +
-           (expression ? expression->toString() : "nullptr") + "}";
+    return "ExpressionStatement{" + (expression ? expression->toString() : "nullptr") + "}";
   }
 
   void accept(ASTVisitor &visitor) const override;
@@ -1566,11 +1522,9 @@ struct InputCommand {
   // InputCommand is copied by value into the command vector, and the
   // parsed node is immutable after parsing.
   std::shared_ptr<Expression> textExpr;
-  std::string key;  // For SendKey
-  std::string
-      xExprStr; // For MouseMove, MouseRelative, MouseWheel, MouseClickAt
-  std::string
-      yExprStr; // For MouseMove, MouseRelative, MouseWheel, MouseClickAt
+  std::string key;           // For SendKey
+  std::string xExprStr;      // For MouseMove, MouseRelative, MouseWheel, MouseClickAt
+  std::string yExprStr;      // For MouseMove, MouseRelative, MouseWheel, MouseClickAt
   std::string speedExprStr;  // Speed parameter
   std::string accelExprStr;  // Acceleration parameter
   std::string buttonExprStr; // Button for MouseClickAt
@@ -1596,7 +1550,7 @@ struct InputStatement : public Statement {
 
 // Get Input Expression - shortcut: < clipboard or < mouse.pos
 struct GetInputExpression : public Expression {
-  std::string source; // "clipboard", "selection", "mouse.pos", etc.
+  std::string source;                 // "clipboard", "selection", "mouse.pos", etc.
   std::unique_ptr<Expression> prompt; // Optional prompt for < in("...")
 
   GetInputExpression() { kind = NodeType::GetInputExpression; }
@@ -1605,9 +1559,7 @@ struct GetInputExpression : public Expression {
     kind = NodeType::GetInputExpression;
   }
 
-  std::string toString() const override {
-    return "GetInputExpression{source: " + source + "}";
-  }
+  std::string toString() const override { return "GetInputExpression{source: " + source + "}"; }
 
   void accept(ASTVisitor &visitor) const override;
 };
@@ -1617,13 +1569,9 @@ struct SleepStatement : public Statement {
   std::string duration; // Duration string like "1500", "1h30m", "3:10:25"
 
   SleepStatement() { kind = NodeType::SleepStatement; }
-  SleepStatement(const std::string &dur) : duration(dur) {
-    kind = NodeType::SleepStatement;
-  }
+  SleepStatement(const std::string &dur) : duration(dur) { kind = NodeType::SleepStatement; }
 
-  std::string toString() const override {
-    return "SleepStatement{duration: " + duration + "}";
-  }
+  std::string toString() const override { return "SleepStatement{duration: " + duration + "}"; }
 
   void accept(ASTVisitor &visitor) const override;
 };
@@ -1653,22 +1601,17 @@ struct BacktickExpression : public Expression {
     kind = NodeType::BacktickExpression;
   }
 
-  std::string toString() const override {
-    return "BacktickExpression{`" + command + "`}";
-  }
+  std::string toString() const override { return "BacktickExpression{`" + command + "`}"; }
 
   void accept(ASTVisitor &visitor) const override;
 };
 
 // Shell Command Expression - $ or $! command in expression context
 struct ShellCommandExpression : public Expression {
-  std::unique_ptr<Expression>
-      commandExpr;    // Expression to evaluate (string or array)
-  bool captureOutput; // true for $! (capture stdout)
+  std::unique_ptr<Expression> commandExpr; // Expression to evaluate (string or array)
+  bool captureOutput;                      // true for $! (capture stdout)
 
-  ShellCommandExpression() : captureOutput(false) {
-    kind = NodeType::ShellCommandExpression;
-  }
+  ShellCommandExpression() : captureOutput(false) { kind = NodeType::ShellCommandExpression; }
   ShellCommandExpression(std::unique_ptr<Expression> expr, bool capture = false)
       : commandExpr(std::move(expr)), captureOutput(capture) {
     kind = NodeType::ShellCommandExpression;
@@ -1676,8 +1619,7 @@ struct ShellCommandExpression : public Expression {
 
   std::string toString() const override {
     std::string prefix = captureOutput ? "$! " : "$ ";
-    return "ShellCommandExpression{" + prefix +
-           (commandExpr ? commandExpr->toString() : "?") + "}";
+    return "ShellCommandExpression{" + prefix + (commandExpr ? commandExpr->toString() : "?") + "}";
   }
 
   void accept(ASTVisitor &visitor) const override;
@@ -1686,24 +1628,20 @@ struct ShellCommandExpression : public Expression {
 // Shell Command Statement - $ command for shell execution
 // Supports pipes: $! cmd1 | cmd2 | cmd3
 struct ShellCommandStatement : public Statement {
-  std::unique_ptr<Expression>
-      commandExpr;    // Expression to evaluate (string or array)
-  bool captureOutput; // true for $! (capture stdout)
+  std::unique_ptr<Expression> commandExpr;     // Expression to evaluate (string or array)
+  bool captureOutput;                          // true for $! (capture stdout)
   std::unique_ptr<ShellCommandStatement> next; // Next command in pipe chain
 
-  ShellCommandStatement() : captureOutput(false) {
-    kind = NodeType::ShellCommandStatement;
-  }
-  explicit ShellCommandStatement(std::unique_ptr<Expression> expr,
-                                 bool capture = false)
+  ShellCommandStatement() : captureOutput(false) { kind = NodeType::ShellCommandStatement; }
+  explicit ShellCommandStatement(std::unique_ptr<Expression> expr, bool capture = false)
       : commandExpr(std::move(expr)), captureOutput(capture), next(nullptr) {
     kind = NodeType::ShellCommandStatement;
   }
 
   std::string toString() const override {
     std::string prefix = captureOutput ? "$! " : "$ ";
-    std::string result = "ShellCommandStatement{" + prefix +
-                         (commandExpr ? commandExpr->toString() : "?");
+    std::string result =
+        "ShellCommandStatement{" + prefix + (commandExpr ? commandExpr->toString() : "?");
     if (next) {
       result += " | " + next->toString();
     }
@@ -1726,8 +1664,7 @@ struct RepeatStatement : public Statement {
   }
 
   std::string toString() const override {
-    return "RepeatStatement{count: " +
-           (countExpr ? countExpr->toString() : "?") + "}";
+    return "RepeatStatement{count: " + (countExpr ? countExpr->toString() : "?") + "}";
   }
 
   void accept(ASTVisitor &visitor) const override;
@@ -1735,29 +1672,24 @@ struct RepeatStatement : public Statement {
 
 // Let Declaration with optional type annotation
 struct LetDeclaration : public Statement {
-  std::unique_ptr<Expression>
-      pattern; // Can be Identifier, ArrayPattern, or ObjectPattern
+  std::unique_ptr<Expression> pattern; // Can be Identifier, ArrayPattern, or ObjectPattern
   std::unique_ptr<Expression> value;
-  std::optional<std::unique_ptr<TypeAnnotation>>
-      typeAnnotation; // Optional type annotation
-  bool isConst;       // true if declared with 'const' (immutable binding)
+  std::optional<std::unique_ptr<TypeAnnotation>> typeAnnotation; // Optional type annotation
+  bool isConst; // true if declared with 'const' (immutable binding)
 
   // Value can be optional if language supports `let x;`
 
-  LetDeclaration(
-      std::unique_ptr<Expression> pat,
-      std::unique_ptr<Expression> val = nullptr,
-      std::optional<std::unique_ptr<TypeAnnotation>> typeAnn = std::nullopt,
-      bool constant = false)
-      : pattern(std::move(pat)), value(std::move(val)),
-        typeAnnotation(std::move(typeAnn)), isConst(constant) {
+  LetDeclaration(std::unique_ptr<Expression> pat, std::unique_ptr<Expression> val = nullptr,
+                 std::optional<std::unique_ptr<TypeAnnotation>> typeAnn = std::nullopt,
+                 bool constant = false)
+      : pattern(std::move(pat)), value(std::move(val)), typeAnnotation(std::move(typeAnn)),
+        isConst(constant) {
     kind = NodeType::LetDeclaration;
   }
 
   std::string toString() const override {
-    std::string result =
-        "LetDeclaration{" + std::string(isConst ? "const" : "let") +
-        " pattern: " + (pattern ? pattern->toString() : "nullptr");
+    std::string result = "LetDeclaration{" + std::string(isConst ? "const" : "let") +
+                         " pattern: " + (pattern ? pattern->toString() : "nullptr");
     if (typeAnnotation) {
       result += ", type: " + (*typeAnnotation)->toString();
     }
@@ -1777,16 +1709,13 @@ struct IfStatement : public Statement {
 
   IfStatement(std::unique_ptr<Expression> cond, std::unique_ptr<Statement> cons,
               std::unique_ptr<Statement> alt = nullptr)
-      : condition(std::move(cond)), consequence(std::move(cons)),
-        alternative(std::move(alt)) {
+      : condition(std::move(cond)), consequence(std::move(cons)), alternative(std::move(alt)) {
     kind = NodeType::IfStatement;
   }
 
   std::string toString() const override {
-    std::string str =
-        "IfStatement{condition: " +
-        (condition ? condition->toString() : "nullptr") +
-        ", consequence: " + (consequence ? consequence->toString() : "nullptr");
+    std::string str = "IfStatement{condition: " + (condition ? condition->toString() : "nullptr") +
+                      ", consequence: " + (consequence ? consequence->toString() : "nullptr");
     if (alternative) {
       str += ", alternative: " + alternative->toString();
     }
@@ -1800,22 +1729,18 @@ struct IfStatement : public Statement {
 // If Expression - returns a value
 struct IfExpression : public Expression {
   std::unique_ptr<Expression> condition;
-  std::unique_ptr<Expression>
-      thenBranch; // BlockExpression or single expression
+  std::unique_ptr<Expression> thenBranch; // BlockExpression or single expression
   std::unique_ptr<Expression> elseBranch; // Optional
 
-  IfExpression(std::unique_ptr<Expression> cond,
-               std::unique_ptr<Expression> thenB,
+  IfExpression(std::unique_ptr<Expression> cond, std::unique_ptr<Expression> thenB,
                std::unique_ptr<Expression> elseB = nullptr)
-      : condition(std::move(cond)), thenBranch(std::move(thenB)),
-        elseBranch(std::move(elseB)) {
+      : condition(std::move(cond)), thenBranch(std::move(thenB)), elseBranch(std::move(elseB)) {
     kind = NodeType::IfExpression;
   }
 
   std::string toString() const override {
-    std::string str =
-        "IfExpr{if " + (condition ? condition->toString() : "nullptr") +
-        " then " + (thenBranch ? thenBranch->toString() : "nullptr");
+    std::string str = "IfExpr{if " + (condition ? condition->toString() : "nullptr") + " then " +
+                      (thenBranch ? thenBranch->toString() : "nullptr");
     if (elseBranch) {
       str += " else " + elseBranch->toString();
     }
@@ -1829,14 +1754,12 @@ struct IfExpression : public Expression {
 struct ReturnStatement : public Statement {
   std::unique_ptr<Expression> argument; // Can be nullptr for `return;`
 
-  ReturnStatement(std::unique_ptr<Expression> arg = nullptr)
-      : argument(std::move(arg)) {
+  ReturnStatement(std::unique_ptr<Expression> arg = nullptr) : argument(std::move(arg)) {
     kind = NodeType::ReturnStatement;
   }
 
   std::string toString() const override {
-    return "ReturnStatement{" + (argument ? argument->toString() : "void") +
-           "}";
+    return "ReturnStatement{" + (argument ? argument->toString() : "void") + "}";
   }
 
   void accept(ASTVisitor &visitor) const override;
@@ -1847,15 +1770,13 @@ struct WhileStatement : public Statement {
   std::unique_ptr<Expression> condition;
   std::unique_ptr<Statement> body; // Typically a BlockStatement
 
-  WhileStatement(std::unique_ptr<Expression> cond,
-                 std::unique_ptr<Statement> bd)
+  WhileStatement(std::unique_ptr<Expression> cond, std::unique_ptr<Statement> bd)
       : condition(std::move(cond)), body(std::move(bd)) {
     kind = NodeType::WhileStatement;
   }
 
   std::string toString() const override {
-    return "WhileStatement{condition: " +
-           (condition ? condition->toString() : "nullptr") +
+    return "WhileStatement{condition: " + (condition ? condition->toString() : "nullptr") +
            ", body: " + (body ? body->toString() : "nullptr") + "}";
   }
 
@@ -1868,16 +1789,15 @@ struct ForStatement : public Statement {
   std::unique_ptr<Expression> iterable;
   std::unique_ptr<Statement> body;
 
-  ForStatement(std::vector<std::unique_ptr<Identifier>> iters,
-               std::unique_ptr<Expression> itbl, std::unique_ptr<Statement> bd)
-      : iterators(std::move(iters)), iterable(std::move(itbl)),
-        body(std::move(bd)) {
+  ForStatement(std::vector<std::unique_ptr<Identifier>> iters, std::unique_ptr<Expression> itbl,
+               std::unique_ptr<Statement> bd)
+      : iterators(std::move(iters)), iterable(std::move(itbl)), body(std::move(bd)) {
     kind = NodeType::ForStatement;
   }
 
   // Legacy constructor for single iterator
-  ForStatement(std::unique_ptr<Identifier> iter,
-               std::unique_ptr<Expression> itbl, std::unique_ptr<Statement> bd)
+  ForStatement(std::unique_ptr<Identifier> iter, std::unique_ptr<Expression> itbl,
+               std::unique_ptr<Statement> bd)
       : iterable(std::move(itbl)), body(std::move(bd)) {
     kind = NodeType::ForStatement;
     if (iter) {
@@ -1912,11 +1832,9 @@ struct ForExpression : public Expression {
   std::unique_ptr<Identifier> binding;
   std::unique_ptr<Expression> iterable;
 
-  ForExpression(std::unique_ptr<Expression> map,
-                std::unique_ptr<Identifier> bind,
+  ForExpression(std::unique_ptr<Expression> map, std::unique_ptr<Identifier> bind,
                 std::unique_ptr<Expression> itbl)
-      : mapping(std::move(map)), binding(std::move(bind)),
-        iterable(std::move(itbl)) {
+      : mapping(std::move(map)), binding(std::move(bind)), iterable(std::move(itbl)) {
     kind = NodeType::ForExpression;
   }
 
@@ -1935,8 +1853,7 @@ struct LoopStatement : public Statement {
   std::unique_ptr<Expression> condition; // For "loop while condition {}"
   std::unique_ptr<Expression> countExpr; // For "loop 5 { ... }"
 
-  LoopStatement(std::unique_ptr<Statement> bd,
-                std::unique_ptr<Expression> cond = nullptr)
+  LoopStatement(std::unique_ptr<Statement> bd, std::unique_ptr<Expression> cond = nullptr)
       : body(std::move(bd)), condition(std::move(cond)) {
     kind = NodeType::LoopStatement;
   }
@@ -1974,16 +1891,14 @@ struct DoWhileStatement : public Statement {
   std::unique_ptr<Statement> body;
   std::unique_ptr<Expression> condition;
 
-  DoWhileStatement(std::unique_ptr<Statement> bd,
-                   std::unique_ptr<Expression> cond)
+  DoWhileStatement(std::unique_ptr<Statement> bd, std::unique_ptr<Expression> cond)
       : body(std::move(bd)), condition(std::move(cond)) {
     kind = NodeType::DoWhileStatement;
   }
 
   std::string toString() const override {
     return "DoWhileStatement{body: " + (body ? body->toString() : "nullptr") +
-           ", condition: " + (condition ? condition->toString() : "nullptr") +
-           "}";
+           ", condition: " + (condition ? condition->toString() : "nullptr") + "}";
   }
 
   void accept(ASTVisitor &visitor) const override;
@@ -2012,16 +1927,14 @@ struct SwitchStatement : public Statement {
   std::unique_ptr<Expression> expression;
   std::vector<std::unique_ptr<SwitchCase>> cases;
 
-  SwitchStatement(std::unique_ptr<Expression> expr,
-                  std::vector<std::unique_ptr<SwitchCase>> cs)
+  SwitchStatement(std::unique_ptr<Expression> expr, std::vector<std::unique_ptr<SwitchCase>> cs)
       : expression(std::move(expr)), cases(std::move(cs)) {
     kind = NodeType::SwitchStatement;
   }
 
   std::string toString() const override {
-    return "SwitchStatement{expression: " +
-           (expression ? expression->toString() : "nullptr") + ", cases: [" +
-           std::to_string(cases.size()) + " cases]}";
+    return "SwitchStatement{expression: " + (expression ? expression->toString() : "nullptr") +
+           ", cases: [" + std::to_string(cases.size()) + " cases]}";
   }
 
   void accept(ASTVisitor &visitor) const override;
@@ -2075,8 +1988,7 @@ struct OnReloadStatement : public Statement {
   }
 
   std::string toString() const override {
-    return "OnReloadStatement{body: " + (body ? body->toString() : "nullptr") +
-           "}";
+    return "OnReloadStatement{body: " + (body ? body->toString() : "nullptr") + "}";
   }
 
   void accept(ASTVisitor &visitor) const override;
@@ -2091,8 +2003,7 @@ struct OnStartStatement : public Statement {
   }
 
   std::string toString() const override {
-    return "OnStartStatement{body: " + (body ? body->toString() : "nullptr") +
-           "}";
+    return "OnStartStatement{body: " + (body ? body->toString() : "nullptr") + "}";
   }
 
   void accept(ASTVisitor &visitor) const override;
@@ -2109,8 +2020,8 @@ struct OnMessageStatement : public Statement {
   }
 
   std::string toString() const override {
-    return "OnMessageStatement{var: " + messageVar + ", body: " +
-           (body ? body->toString() : "nullptr") + "}";
+    return "OnMessageStatement{var: " + messageVar +
+           ", body: " + (body ? body->toString() : "nullptr") + "}";
   }
 
   void accept(ASTVisitor &visitor) const override;
@@ -2122,23 +2033,24 @@ struct OnMessageStatement : public Statement {
 // event.subscribe(name, handler, [filter]). The runtime, not the parser,
 // assigns meaning to event names.
 struct OnEventStatement : public Statement {
-  std::string eventName;                    // dotted or plain name
-  std::unique_ptr<Expression> eventArg;     // optional argument (e.g. path)
-  std::unique_ptr<Expression> filter;       // optional `where` predicate
+  std::string eventName;                // dotted or plain name
+  std::unique_ptr<Expression> eventArg; // optional argument (e.g. path)
+  std::unique_ptr<Expression> filter;   // optional `where` predicate
   std::unique_ptr<Statement> body;
 
   OnEventStatement(std::string name, std::unique_ptr<Expression> arg,
-                   std::unique_ptr<Expression> filt,
-                   std::unique_ptr<Statement> bd)
-      : eventName(std::move(name)), eventArg(std::move(arg)),
-        filter(std::move(filt)), body(std::move(bd)) {
+                   std::unique_ptr<Expression> filt, std::unique_ptr<Statement> bd)
+      : eventName(std::move(name)), eventArg(std::move(arg)), filter(std::move(filt)),
+        body(std::move(bd)) {
     kind = NodeType::OnEventStatement;
   }
 
   std::string toString() const override {
     std::string s = "OnEventStatement{event: " + eventName;
-    if (eventArg) s += "(arg)";
-    if (filter) s += ", filter";
+    if (eventArg)
+      s += "(arg)";
+    if (filter)
+      s += ", filter";
     s += ", body: " + (body ? body->toString() : "nullptr") + "}";
     return s;
   }
@@ -2157,17 +2069,18 @@ struct OnEventExpression : public Expression {
   std::unique_ptr<Statement> body;
 
   OnEventExpression(std::string name, std::unique_ptr<Expression> arg,
-                    std::unique_ptr<Expression> filt,
-                    std::unique_ptr<Statement> bd)
-      : eventName(std::move(name)), eventArg(std::move(arg)),
-        filter(std::move(filt)), body(std::move(bd)) {
+                    std::unique_ptr<Expression> filt, std::unique_ptr<Statement> bd)
+      : eventName(std::move(name)), eventArg(std::move(arg)), filter(std::move(filt)),
+        body(std::move(bd)) {
     kind = NodeType::OnEventExpression;
   }
 
   std::string toString() const override {
     std::string s = "OnEventExpression{event: " + eventName;
-    if (eventArg) s += "(arg)";
-    if (filter) s += ", filter";
+    if (eventArg)
+      s += "(arg)";
+    if (filter)
+      s += ", filter";
     s += ", body: " + (body ? body->toString() : "nullptr") + "}";
     return s;
   }
@@ -2188,8 +2101,7 @@ struct EmitStatement : public Statement {
   }
 
   std::string toString() const override {
-    return "EmitStatement{event: " + eventName +
-           (payload ? ", payload" : "") + "}";
+    return "EmitStatement{event: " + eventName + (payload ? ", payload" : "") + "}";
   }
 
   void accept(ASTVisitor &visitor) const override;
@@ -2254,8 +2166,8 @@ struct OnTapStatement : public Statement {
   }
 
   std::string toString() const override {
-    return "OnTapStatement{key: " + key +
-           ", action: " + (action ? action->toString() : "nullptr") + "}";
+    return "OnTapStatement{key: " + key + ", action: " + (action ? action->toString() : "nullptr") +
+           "}";
   }
 
   void accept(ASTVisitor &visitor) const override;
@@ -2281,32 +2193,28 @@ struct OnComboStatement : public Statement {
 
 // Function Declaration with optional return type annotation
 struct FunctionDeclaration : public Statement {
-    std::unique_ptr<Identifier> name;
-    std::vector<std::unique_ptr<FunctionParameter>> parameters;
-    std::unique_ptr<BlockStatement> body;
-    std::optional<std::unique_ptr<TypeAnnotation>>
-        returnType; // Optional return type annotation
-    bool is_coroutine = false; // co fn - creates a fiber
-    // True when this body reaches a `yield`/`await`, computed ONCE at parse
-    // time. Must match ByteCompiler::functionContainsYield's semantics
-    // exactly (nested functions/lambdas do NOT count: they get their own
-    // flag). See scripts/tests/test_is_generator_parity.hv.
-    bool contains_yield = false;
-	std::vector<TypeParam> typeParameters;
+  std::unique_ptr<Identifier> name;
+  std::vector<std::unique_ptr<FunctionParameter>> parameters;
+  std::unique_ptr<BlockStatement> body;
+  std::optional<std::unique_ptr<TypeAnnotation>> returnType; // Optional return type annotation
+  bool is_coroutine = false;                                 // co fn - creates a fiber
+  // True when this body reaches a `yield`/`await`, computed ONCE at parse
+  // time. Must match ByteCompiler::functionContainsYield's semantics
+  // exactly (nested functions/lambdas do NOT count: they get their own
+  // flag). See scripts/tests/test_is_generator_parity.hv.
+  bool contains_yield = false;
+  std::vector<TypeParam> typeParameters;
 
-	FunctionDeclaration(
-		std::unique_ptr<Identifier> n,
-		std::vector<std::unique_ptr<FunctionParameter>> params,
-		std::unique_ptr<BlockStatement> bd,
-		std::optional<std::unique_ptr<TypeAnnotation>> returnAnn = std::nullopt,
-		std::vector<TypeParam> typeParams = {},
-		bool isCoroutine = false)
-		: name(std::move(n)), parameters(std::move(params)), body(std::move(bd)),
-		returnType(std::move(returnAnn)),
-		is_coroutine(isCoroutine),
-		typeParameters(std::move(typeParams)) {
-        kind = NodeType::FunctionDeclaration;
-    }
+  FunctionDeclaration(std::unique_ptr<Identifier> n,
+                      std::vector<std::unique_ptr<FunctionParameter>> params,
+                      std::unique_ptr<BlockStatement> bd,
+                      std::optional<std::unique_ptr<TypeAnnotation>> returnAnn = std::nullopt,
+                      std::vector<TypeParam> typeParams = {}, bool isCoroutine = false)
+      : name(std::move(n)), parameters(std::move(params)), body(std::move(bd)),
+        returnType(std::move(returnAnn)), is_coroutine(isCoroutine),
+        typeParameters(std::move(typeParams)) {
+    kind = NodeType::FunctionDeclaration;
+  }
 
   std::string toString() const override {
     std::string paramsStr;
@@ -2315,9 +2223,8 @@ struct FunctionDeclaration : public Statement {
       if (i < parameters.size() - 1)
         paramsStr += ", ";
     }
-    std::string result =
-        "FunctionDeclaration{name: " + (name ? name->toString() : "nullptr") +
-        ", params: [" + paramsStr + "]";
+    std::string result = "FunctionDeclaration{name: " + (name ? name->toString() : "nullptr") +
+                         ", params: [" + paramsStr + "]";
     if (returnType) {
       result += ", returnType: " + (*returnType)->toString();
     }
@@ -2332,9 +2239,7 @@ struct DecoratorStatement : public Statement {
   std::vector<std::unique_ptr<Expression>> decorators;
   std::unique_ptr<Statement> target;
 
-  DecoratorStatement(
-      std::vector<std::unique_ptr<Expression>> decs,
-      std::unique_ptr<Statement> tgt)
+  DecoratorStatement(std::vector<std::unique_ptr<Expression>> decs, std::unique_ptr<Statement> tgt)
       : decorators(std::move(decs)), target(std::move(tgt)) {
     kind = NodeType::DecoratorStatement;
   }
@@ -2343,7 +2248,8 @@ struct DecoratorStatement : public Statement {
     std::string result = "DecoratorStatement{decorators: [";
     for (size_t i = 0; i < decorators.size(); ++i) {
       result += decorators[i] ? decorators[i]->toString() : "null";
-      if (i < decorators.size() - 1) result += ", ";
+      if (i < decorators.size() - 1)
+        result += ", ";
     }
     result += "], target: " + (target ? target->toString() : "null") + "}";
     return result;
@@ -2358,11 +2264,9 @@ struct ImplDeclaration : public Statement {
   std::unique_ptr<Identifier> typeName;
   std::vector<std::unique_ptr<FunctionDeclaration>> funcs;
 
-  ImplDeclaration(std::unique_ptr<Identifier> trait,
-                  std::unique_ptr<Identifier> type,
+  ImplDeclaration(std::unique_ptr<Identifier> trait, std::unique_ptr<Identifier> type,
                   std::vector<std::unique_ptr<FunctionDeclaration>> f)
-      : traitName(std::move(trait)), typeName(std::move(type)),
-        funcs(std::move(f)) {
+      : traitName(std::move(trait)), typeName(std::move(type)), funcs(std::move(f)) {
     kind = NodeType::ImplDeclaration;
   }
 
@@ -2378,10 +2282,8 @@ struct TryExpression : public Statement {
   std::unique_ptr<Statement> finallyBlock;   // optional finally block
 
   TryExpression() { kind = NodeType::TryExpression; }
-  TryExpression(std::unique_ptr<Statement> tryBody,
-                std::unique_ptr<Identifier> catchVariable,
-                std::unique_ptr<Statement> catchBody,
-                std::unique_ptr<Statement> finallyBlock)
+  TryExpression(std::unique_ptr<Statement> tryBody, std::unique_ptr<Identifier> catchVariable,
+                std::unique_ptr<Statement> catchBody, std::unique_ptr<Statement> finallyBlock)
       : tryBody(std::move(tryBody)), catchVariable(std::move(catchVariable)),
         catchBody(std::move(catchBody)), finallyBlock(std::move(finallyBlock)) {
     kind = NodeType::TryExpression;
@@ -2426,8 +2328,7 @@ struct DelStatement : public Statement {
 struct UnionType : public TypeDefinition {
   std::vector<std::unique_ptr<TypeDefinition>> variants;
 
-  UnionType(std::vector<std::unique_ptr<TypeDefinition>> vars)
-      : variants(std::move(vars)) {
+  UnionType(std::vector<std::unique_ptr<TypeDefinition>> vars) : variants(std::move(vars)) {
     kind = NodeType::UnionType;
   }
 
@@ -2476,15 +2377,14 @@ struct TypeDeclaration : public Statement {
   std::string name;
   std::unique_ptr<TypeDefinition> definition;
 
-  TypeDeclaration(const std::string &typeName,
-                  std::unique_ptr<TypeDefinition> def)
+  TypeDeclaration(const std::string &typeName, std::unique_ptr<TypeDefinition> def)
       : name(typeName), definition(std::move(def)) {
     kind = NodeType::TypeDeclaration;
   }
 
   std::string toString() const override {
-    return "TypeDeclaration{name: " + name + ", definition: " +
-           (definition ? definition->toString() : "nullptr") + "}";
+    return "TypeDeclaration{name: " + name +
+           ", definition: " + (definition ? definition->toString() : "nullptr") + "}";
   }
 
   void accept(ASTVisitor &visitor) const override;
@@ -2495,43 +2395,43 @@ struct TypeDeclaration : public Statement {
  * Example: struct Vec2 { x: Num, y: Num }
  */
 struct StructDeclaration : public Statement {
-    std::string name;
-    StructDefinition definition;
-    std::vector<std::string> protocolNames;
-	std::vector<TypeParam> typeParameters;
+  std::string name;
+  StructDefinition definition;
+  std::vector<std::string> protocolNames;
+  std::vector<TypeParam> typeParameters;
 
-	StructDeclaration(const std::string &structName, StructDefinition def,
-		std::vector<std::string> protos = {},
-		std::vector<TypeParam> typeParams = {})
-		: name(structName), definition(std::move(def)),
-		protocolNames(std::move(protos)),
-		typeParameters(std::move(typeParams)) {
-        kind = NodeType::StructDeclaration;
+  StructDeclaration(const std::string &structName, StructDefinition def,
+                    std::vector<std::string> protos = {}, std::vector<TypeParam> typeParams = {})
+      : name(structName), definition(std::move(def)), protocolNames(std::move(protos)),
+        typeParameters(std::move(typeParams)) {
+    kind = NodeType::StructDeclaration;
+  }
+
+  std::string toString() const override {
+    std::string result = "StructDeclaration{name: " + name;
+    if (!typeParameters.empty()) {
+      result += ", typeParams: [";
+      for (size_t i = 0; i < typeParameters.size(); ++i) {
+        if (i > 0)
+          result += ", ";
+        result += typeParameters[i].toString();
+      }
+      result += "]";
     }
-
-    std::string toString() const override {
-        std::string result = "StructDeclaration{name: " + name;
-        if (!typeParameters.empty()) {
-            result += ", typeParams: [";
-            for (size_t i = 0; i < typeParameters.size(); ++i) {
-                if (i > 0) result += ", ";
-	result += typeParameters[i].toString();
-	}
-	result += "]";
-}
-if (!protocolNames.empty()) {
-            result += ", protocols: [";
-            for (size_t i = 0; i < protocolNames.size(); ++i) {
-                if (i > 0) result += ", ";
-                result += protocolNames[i];
-            }
-            result += "]";
-        }
-        result += ", definition: " + definition.toString() + "}";
-        return result;
+    if (!protocolNames.empty()) {
+      result += ", protocols: [";
+      for (size_t i = 0; i < protocolNames.size(); ++i) {
+        if (i > 0)
+          result += ", ";
+        result += protocolNames[i];
+      }
+      result += "]";
     }
+    result += ", definition: " + definition.toString() + "}";
+    return result;
+  }
 
-    void accept(ASTVisitor &visitor) const override;
+  void accept(ASTVisitor &visitor) const override;
 };
 
 /**
@@ -2539,48 +2439,48 @@ if (!protocolNames.empty()) {
  * Example: class Window { x, y; fn moveTo(x, y) {...} }
  */
 struct ClassDeclaration : public Statement {
-    std::string name;
-    std::string parentName; // Parent class name for inheritance (empty if none)
-    std::vector<std::string> protocolNames;
-    ClassDefinition definition;
-	std::vector<TypeParam> typeParameters;
+  std::string name;
+  std::string parentName; // Parent class name for inheritance (empty if none)
+  std::vector<std::string> protocolNames;
+  ClassDefinition definition;
+  std::vector<TypeParam> typeParameters;
 
-	ClassDeclaration(const std::string &className, ClassDefinition def,
-		const std::string &parent = "",
-		std::vector<std::string> protos = {},
-		std::vector<TypeParam> typeParams = {})
-		: name(className), parentName(parent),
-		protocolNames(std::move(protos)), definition(std::move(def)),
-		typeParameters(std::move(typeParams)) {
-        kind = NodeType::ClassDeclaration;
+  ClassDeclaration(const std::string &className, ClassDefinition def,
+                   const std::string &parent = "", std::vector<std::string> protos = {},
+                   std::vector<TypeParam> typeParams = {})
+      : name(className), parentName(parent), protocolNames(std::move(protos)),
+        definition(std::move(def)), typeParameters(std::move(typeParams)) {
+    kind = NodeType::ClassDeclaration;
+  }
+
+  std::string toString() const override {
+    std::string result = "ClassDeclaration{name: " + name;
+    if (!typeParameters.empty()) {
+      result += ", typeParams: [";
+      for (size_t i = 0; i < typeParameters.size(); ++i) {
+        if (i > 0)
+          result += ", ";
+        result += typeParameters[i].toString();
+      }
+      result += "]";
     }
-
-    std::string toString() const override {
-        std::string result = "ClassDeclaration{name: " + name;
-        if (!typeParameters.empty()) {
-            result += ", typeParams: [";
-            for (size_t i = 0; i < typeParameters.size(); ++i) {
-                if (i > 0) result += ", ";
-		result += typeParameters[i].toString();
-		}
-		result += "]";
-	}
-	if (!parentName.empty()) {
-            result += ", parent: " + parentName;
-        }
-        if (!protocolNames.empty()) {
-            result += ", protocols: [";
-            for (size_t i = 0; i < protocolNames.size(); ++i) {
-                if (i > 0) result += ", ";
-                result += protocolNames[i];
-            }
-            result += "]";
-        }
-        result += ", definition: " + definition.toString() + "}";
-        return result;
+    if (!parentName.empty()) {
+      result += ", parent: " + parentName;
     }
+    if (!protocolNames.empty()) {
+      result += ", protocols: [";
+      for (size_t i = 0; i < protocolNames.size(); ++i) {
+        if (i > 0)
+          result += ", ";
+        result += protocolNames[i];
+      }
+      result += "]";
+    }
+    result += ", definition: " + definition.toString() + "}";
+    return result;
+  }
 
-    void accept(ASTVisitor &visitor) const override;
+  void accept(ASTVisitor &visitor) const override;
 };
 
 /**
@@ -2588,40 +2488,40 @@ struct ClassDeclaration : public Statement {
  * Example: enum Color { Red, Green, Blue }
  */
 struct EnumDeclaration : public Statement {
-    std::string name;
-    EnumDefinition definition;
-	std::vector<TypeParam> typeParameters;
+  std::string name;
+  EnumDefinition definition;
+  std::vector<TypeParam> typeParameters;
 
-	EnumDeclaration(const std::string &enumName, EnumDefinition def,
-		std::vector<TypeParam> typeParams = {})
-		: name(enumName), definition(std::move(def)),
-		typeParameters(std::move(typeParams)) {
-		kind = NodeType::EnumDeclaration;
-	}
+  EnumDeclaration(const std::string &enumName, EnumDefinition def,
+                  std::vector<TypeParam> typeParams = {})
+      : name(enumName), definition(std::move(def)), typeParameters(std::move(typeParams)) {
+    kind = NodeType::EnumDeclaration;
+  }
 
-	std::string toString() const override {
-		std::string result = "EnumDeclaration{name: " + name;
-		if (!typeParameters.empty()) {
-			result += ", typeParams: [";
-			for (size_t i = 0; i < typeParameters.size(); ++i) {
-				if (i > 0) result += ", ";
-				result += typeParameters[i].toString();
-			}
-			result += "]";
-		}
-		result += ", definition: " + definition.toString() + "}";
-		return result;
-	}
+  std::string toString() const override {
+    std::string result = "EnumDeclaration{name: " + name;
+    if (!typeParameters.empty()) {
+      result += ", typeParams: [";
+      for (size_t i = 0; i < typeParameters.size(); ++i) {
+        if (i > 0)
+          result += ", ";
+        result += typeParameters[i].toString();
+      }
+      result += "]";
+    }
+    result += ", definition: " + definition.toString() + "}";
+    return result;
+  }
 
-    void accept(ASTVisitor &visitor) const override;
+  void accept(ASTVisitor &visitor) const override;
 };
 
 struct UnaryExpression : public Expression {
   enum class UnaryOperator {
-    Not,    // !expr, not expr
-    Minus,  // -expr
-    Plus,   // +expr (unary plus)
-    Length, // #expr (length operator)
+    Not,        // !expr, not expr
+    Minus,      // -expr
+    Plus,       // +expr (unary plus)
+    Length,     // #expr (length operator)
     BitwiseNot, // ~expr bitwise NOT (inside (( )))
   };
 
@@ -2634,12 +2534,11 @@ struct UnaryExpression : public Expression {
   }
 
   std::string toString() const override {
-    std::string opStr = (operator_ == UnaryOperator::Not) ? "!"
-        : (operator_ == UnaryOperator::Minus) ? "-"
-        : (operator_ == UnaryOperator::BitwiseNot) ? "~"
-        : "+";
-    return "UnaryExpr{" + opStr + (operand ? operand->toString() : "nullptr") +
-           "}";
+    std::string opStr = (operator_ == UnaryOperator::Not)          ? "!"
+                        : (operator_ == UnaryOperator::Minus)      ? "-"
+                        : (operator_ == UnaryOperator::BitwiseNot) ? "~"
+                                                                   : "+";
+    return "UnaryExpr{" + opStr + (operand ? operand->toString() : "nullptr") + "}";
   }
 
   void accept(ASTVisitor &visitor) const override;
@@ -2648,8 +2547,7 @@ struct UnaryExpression : public Expression {
 struct ArrayLiteral : public Expression {
   std::vector<std::unique_ptr<Expression>> elements;
 
-  ArrayLiteral(std::vector<std::unique_ptr<Expression>> elems = {})
-      : elements(std::move(elems)) {
+  ArrayLiteral(std::vector<std::unique_ptr<Expression>> elems = {}) : elements(std::move(elems)) {
     kind = NodeType::ArrayLiteral;
   }
 
@@ -2688,7 +2586,7 @@ struct TupleExpression : public Expression {
 struct ObjectLiteral : public Expression {
   // Pair entry: key may be empty for positional elements (no colon)
   struct PairEntry {
-    std::string key;                    // empty for positional elements
+    std::string key;                     // empty for positional elements
     bool isComputedKey = false;          // true if key is [expr]
     std::unique_ptr<Expression> keyExpr; // expression for computed key
     std::unique_ptr<Expression> value;   // the value
@@ -2716,8 +2614,7 @@ struct ObjectPattern : public Expression {
   // pattern
   std::vector<std::pair<std::string, std::unique_ptr<Expression>>> properties;
 
-  ObjectPattern(std::vector<std::pair<std::string, std::unique_ptr<Expression>>>
-                    props = {})
+  ObjectPattern(std::vector<std::pair<std::string, std::unique_ptr<Expression>>> props = {})
       : properties(std::move(props)) {
     kind = NodeType::ObjectPattern;
   }
@@ -2731,17 +2628,15 @@ struct ObjectPattern : public Expression {
 
 // Array Pattern for destructuring ([a, b] or [x, ..rest])
 struct ArrayPattern : public Expression {
-std::vector<std::unique_ptr<Expression>> elements;
-std::unique_ptr<Expression> rest; // for ..rest pattern
-bool is_tuple_destructuring = false;
+  std::vector<std::unique_ptr<Expression>> elements;
+  std::unique_ptr<Expression> rest; // for ..rest pattern
+  bool is_tuple_destructuring = false;
 
-ArrayPattern(std::vector<std::unique_ptr<Expression>> elems = {},
-std::unique_ptr<Expression> restPat = nullptr,
-bool isTuple = false)
-: elements(std::move(elems)), rest(std::move(restPat)),
-is_tuple_destructuring(isTuple) {
-kind = NodeType::ArrayPattern;
-}
+  ArrayPattern(std::vector<std::unique_ptr<Expression>> elems = {},
+               std::unique_ptr<Expression> restPat = nullptr, bool isTuple = false)
+      : elements(std::move(elems)), rest(std::move(restPat)), is_tuple_destructuring(isTuple) {
+    kind = NodeType::ArrayPattern;
+  }
 
   std::string toString() const override {
     return "ArrayPattern{" + std::to_string(elements.size()) + " elements" +
@@ -2753,18 +2648,16 @@ kind = NodeType::ArrayPattern;
 
 // Constructor Pattern for match (Name(p1, p2))
 struct ConstructorPattern : public Expression {
-  std::string name;                          // Constructor name (e.g. "Ok", "Err")
+  std::string name;                              // Constructor name (e.g. "Ok", "Err")
   std::vector<std::unique_ptr<Expression>> args; // Sub-patterns for each field
 
-  ConstructorPattern(std::string n,
-                     std::vector<std::unique_ptr<Expression>> a = {})
+  ConstructorPattern(std::string n, std::vector<std::unique_ptr<Expression>> a = {})
       : name(std::move(n)), args(std::move(a)) {
     kind = NodeType::ConstructorPattern;
   }
 
   std::string toString() const override {
-    return "ConstructorPattern{" + name + " " +
-           std::to_string(args.size()) + " args}";
+    return "ConstructorPattern{" + name + " " + std::to_string(args.size()) + " args}";
   }
 
   void accept(ASTVisitor &visitor) const override;
@@ -2774,8 +2667,7 @@ struct ConstructorPattern : public Expression {
 struct OrPattern : public Expression {
   std::vector<std::unique_ptr<Expression>> alternatives;
 
-  OrPattern(std::vector<std::unique_ptr<Expression>> alts = {})
-      : alternatives(std::move(alts)) {
+  OrPattern(std::vector<std::unique_ptr<Expression>> alts = {}) : alternatives(std::move(alts)) {
     kind = NodeType::OrPattern;
   }
 
@@ -2797,16 +2689,13 @@ struct WildcardPattern : public Expression {
 
 // Spread Pattern for rest elements (..rest)
 struct SpreadPattern : public Expression {
-  std::unique_ptr<Expression> target;  // identifier to bind rest to
+  std::unique_ptr<Expression> target; // identifier to bind rest to
 
-  SpreadPattern(std::unique_ptr<Expression> t = nullptr)
-      : target(std::move(t)) {
+  SpreadPattern(std::unique_ptr<Expression> t = nullptr) : target(std::move(t)) {
     kind = NodeType::SpreadPattern;
   }
 
-  std::string toString() const override {
-    return "SpreadPattern{}";
-  }
+  std::string toString() const override { return "SpreadPattern{}"; }
 
   void accept(ASTVisitor &visitor) const override;
 };
@@ -2829,8 +2718,7 @@ struct SpreadExpression : public Expression {
 struct SetExpression : public Expression {
   std::vector<std::unique_ptr<Expression>> elements;
 
-  SetExpression(std::vector<std::unique_ptr<Expression>> elems = {})
-      : elements(std::move(elems)) {
+  SetExpression(std::vector<std::unique_ptr<Expression>> elems = {}) : elements(std::move(elems)) {
     kind = NodeType::SetExpression;
   }
 
@@ -2853,8 +2741,7 @@ struct CollectionExpression : public Expression {
   };
   std::vector<PairEntry> entries;
 
-  CollectionExpression(std::vector<PairEntry> e = {})
-      : entries(std::move(e)) {
+  CollectionExpression(std::vector<PairEntry> e = {}) : entries(std::move(e)) {
     kind = NodeType::CollectionExpression;
   }
 
@@ -2869,8 +2756,7 @@ struct CollectionExpression : public Expression {
 struct ConfigBlock : public Statement {
   std::vector<std::pair<std::string, std::unique_ptr<Expression>>> pairs;
 
-  ConfigBlock(
-      std::vector<std::pair<std::string, std::unique_ptr<Expression>>> p = {})
+  ConfigBlock(std::vector<std::pair<std::string, std::unique_ptr<Expression>>> p = {})
       : pairs(std::move(p)) {
     kind = NodeType::ConfigBlock;
   }
@@ -2886,8 +2772,7 @@ struct ConfigBlock : public Statement {
 struct DevicesBlock : public Statement {
   std::vector<std::pair<std::string, std::unique_ptr<Expression>>> pairs;
 
-  DevicesBlock(
-      std::vector<std::pair<std::string, std::unique_ptr<Expression>>> p = {})
+  DevicesBlock(std::vector<std::pair<std::string, std::unique_ptr<Expression>>> p = {})
       : pairs(std::move(p)) {
     kind = NodeType::DevicesBlock;
   }
@@ -2907,8 +2792,8 @@ struct ModeDefinition {
   std::unique_ptr<BlockStatement> enterBlock;
   std::unique_ptr<BlockStatement> exitBlock;
   int priority = 0;
-  std::string onEnterFrom; // Mode name for on enter from hook
-  std::string onExitTo;    // Mode name for on exit to hook
+  std::string onEnterFrom;                          // Mode name for on enter from hook
+  std::string onExitTo;                             // Mode name for on exit to hook
   std::unique_ptr<BlockStatement> onEnterFromBlock; // Block for on enter from
   std::unique_ptr<BlockStatement> onExitToBlock;    // Block for on exit to
 
@@ -2923,8 +2808,7 @@ struct ModeDefinition {
 
   ModeDefinition() = default;
   ModeDefinition(const std::string &n, std::unique_ptr<Expression> cond,
-                 std::unique_ptr<BlockStatement> enter,
-                 std::unique_ptr<BlockStatement> exit)
+                 std::unique_ptr<BlockStatement> enter, std::unique_ptr<BlockStatement> exit)
       : name(n), condition(std::move(cond)), enterBlock(std::move(enter)),
         exitBlock(std::move(exit)) {}
 };
@@ -2950,15 +2834,13 @@ struct ModeBlock : public Statement {
   std::string modeName;
   std::vector<std::unique_ptr<Statement>> statements;
 
-  ModeBlock(const std::string &name,
-            std::vector<std::unique_ptr<Statement>> stmts = {})
+  ModeBlock(const std::string &name, std::vector<std::unique_ptr<Statement>> stmts = {})
       : modeName(name), statements(std::move(stmts)) {
     kind = NodeType::ModeBlock;
   }
 
   std::string toString() const override {
-    return "ModeBlock{" + modeName + ", " + std::to_string(statements.size()) +
-           " stmts}";
+    return "ModeBlock{" + modeName + ", " + std::to_string(statements.size()) + " stmts}";
   }
 
   void accept(ASTVisitor &visitor) const override;
@@ -2971,10 +2853,9 @@ struct ConfigSection : public Statement {
   std::vector<std::string> args; // Hyprland-style args: monitor HDMI-0 { ... }
   std::vector<std::pair<std::string, std::unique_ptr<Expression>>> pairs;
 
-  ConfigSection(
-      const std::string &n,
-      std::vector<std::pair<std::string, std::unique_ptr<Expression>>> p = {},
-      std::vector<std::string> a = {})
+  ConfigSection(const std::string &n,
+                std::vector<std::pair<std::string, std::unique_ptr<Expression>>> p = {},
+                std::vector<std::string> a = {})
       : name(n), args(std::move(a)), pairs(std::move(p)) {
     kind = NodeType::ConfigSection;
   }
@@ -3011,11 +2892,9 @@ struct UpdateExpression : public Expression {
   std::string toString() const override {
     std::string opStr = (operator_ == Operator::Increment) ? "++" : "--";
     if (isPrefix)
-      return "UpdateExpr{" + opStr +
-             (argument ? argument->toString() : "nullptr") + "}";
+      return "UpdateExpr{" + opStr + (argument ? argument->toString() : "nullptr") + "}";
     else
-      return "UpdateExpr{" + (argument ? argument->toString() : "nullptr") +
-             opStr + "}";
+      return "UpdateExpr{" + (argument ? argument->toString() : "nullptr") + opStr + "}";
   }
 
   void accept(ASTVisitor &visitor) const override;
@@ -3051,9 +2930,7 @@ struct AsyncExpression : public Expression {
     kind = NodeType::AsyncExpression;
   }
 
-  std::string toString() const override {
-    return "AsyncExpression{async block}";
-  }
+  std::string toString() const override { return "AsyncExpression{async block}"; }
 
   void accept(ASTVisitor &visitor) const override;
 };
@@ -3077,15 +2954,14 @@ struct IndexExpression : public Expression {
   std::unique_ptr<Expression> object;
   std::unique_ptr<Expression> index;
 
-  IndexExpression(std::unique_ptr<Expression> obj,
-                  std::unique_ptr<Expression> idx)
+  IndexExpression(std::unique_ptr<Expression> obj, std::unique_ptr<Expression> idx)
       : object(std::move(obj)), index(std::move(idx)) {
     kind = NodeType::IndexExpression;
   }
 
   std::string toString() const override {
-    return "IndexExpression{" + (object ? object->toString() : "nullptr") +
-           "[" + (index ? index->toString() : "nullptr") + "]}";
+    return "IndexExpression{" + (object ? object->toString() : "nullptr") + "[" +
+           (index ? index->toString() : "nullptr") + "]}";
   }
 
   void accept(ASTVisitor &visitor) const override;
@@ -3127,17 +3003,14 @@ struct TernaryExpression : public Expression {
   std::unique_ptr<Expression> trueValue;
   std::unique_ptr<Expression> falseValue;
 
-  TernaryExpression(std::unique_ptr<Expression> cond,
-                    std::unique_ptr<Expression> tVal,
+  TernaryExpression(std::unique_ptr<Expression> cond, std::unique_ptr<Expression> tVal,
                     std::unique_ptr<Expression> fVal)
-      : condition(std::move(cond)), trueValue(std::move(tVal)),
-        falseValue(std::move(fVal)) {
+      : condition(std::move(cond)), trueValue(std::move(tVal)), falseValue(std::move(fVal)) {
     kind = NodeType::TernaryExpression;
   }
 
   std::string toString() const override {
-    return "TernaryExpression{" +
-           (condition ? condition->toString() : "nullptr") + " ? " +
+    return "TernaryExpression{" + (condition ? condition->toString() : "nullptr") + " ? " +
            (trueValue ? trueValue->toString() : "nullptr") + " : " +
            (falseValue ? falseValue->toString() : "nullptr") + "}";
   }
@@ -3158,8 +3031,8 @@ struct RangeExpression : public Expression {
   }
 
   std::string toString() const override {
-    std::string result = (start ? start->toString() : "nullptr") + ".." +
-                         (end ? end->toString() : "nullptr");
+    std::string result =
+        (start ? start->toString() : "nullptr") + ".." + (end ? end->toString() : "nullptr");
     if (step) {
       result += ".." + step->toString();
     }
@@ -3176,9 +3049,8 @@ struct AssignmentExpression : public Expression {
   std::string operator_;              // "=" for now
   bool isGlobalScope;                 // true for ::x = value
 
-  AssignmentExpression(std::unique_ptr<Expression> t,
-                       std::unique_ptr<Expression> v, std::string op = "=",
-                       bool globalScope = false)
+  AssignmentExpression(std::unique_ptr<Expression> t, std::unique_ptr<Expression> v,
+                       std::string op = "=", bool globalScope = false)
       : target(std::move(t)), value(std::move(v)), operator_(std::move(op)),
         isGlobalScope(globalScope) {
     kind = NodeType::AssignmentExpression;
@@ -3186,37 +3058,36 @@ struct AssignmentExpression : public Expression {
 
   std::string toString() const override {
     std::string prefix = isGlobalScope ? "::" : "";
-    return "AssignmentExpression{" + prefix +
-           (target ? target->toString() : "nullptr") + " " + operator_ + " " +
-           (value ? value->toString() : "nullptr") + "}";
+    return "AssignmentExpression{" + prefix + (target ? target->toString() : "nullptr") + " " +
+           operator_ + " " + (value ? value->toString() : "nullptr") + "}";
   }
 
-    void accept(ASTVisitor &visitor) const override;
+  void accept(ASTVisitor &visitor) const override;
 };
 
 // Multiple Assignment: a, b, c = expr
 // Each target gets the same value (or tuple-unpacking if value is tuple)
 struct MultipleAssignment : public Expression {
-    std::vector<std::unique_ptr<Expression>> targets;
-    std::unique_ptr<Expression> value;
+  std::vector<std::unique_ptr<Expression>> targets;
+  std::unique_ptr<Expression> value;
 
-    MultipleAssignment(std::vector<std::unique_ptr<Expression>> t,
-                       std::unique_ptr<Expression> v)
-        : targets(std::move(t)), value(std::move(v)) {
-        kind = NodeType::MultipleAssignment;
+  MultipleAssignment(std::vector<std::unique_ptr<Expression>> t, std::unique_ptr<Expression> v)
+      : targets(std::move(t)), value(std::move(v)) {
+    kind = NodeType::MultipleAssignment;
+  }
+
+  std::string toString() const override {
+    std::string result = "MultipleAssignment{";
+    for (size_t i = 0; i < targets.size(); ++i) {
+      if (i > 0)
+        result += ", ";
+      result += targets[i] ? targets[i]->toString() : "nullptr";
     }
+    result += " = " + (value ? value->toString() : "nullptr") + "}";
+    return result;
+  }
 
-    std::string toString() const override {
-        std::string result = "MultipleAssignment{";
-        for (size_t i = 0; i < targets.size(); ++i) {
-            if (i > 0) result += ", ";
-            result += targets[i] ? targets[i]->toString() : "nullptr";
-        }
-        result += " = " + (value ? value->toString() : "nullptr") + "}";
-        return result;
-    }
-
-    void accept(ASTVisitor &visitor) const override;
+  void accept(ASTVisitor &visitor) const override;
 };
 
 // Cast Expression: expr as Type
@@ -3230,8 +3101,7 @@ struct CastExpression : public Expression {
   }
 
   std::string toString() const override {
-    return "CastExpression{" + (expr ? expr->toString() : "nullptr") + " as " +
-           targetType + "}";
+    return "CastExpression{" + (expr ? expr->toString() : "nullptr") + " as " + targetType + "}";
   }
 
   void accept(ASTVisitor &visitor) const override;
@@ -3241,20 +3111,22 @@ struct CastExpression : public Expression {
 struct MatchExpression : public Expression {
   struct MatchArm {
     std::vector<std::unique_ptr<Expression>> patterns;
-    std::unique_ptr<Expression> guard;  // optional guard condition (if expr)
+    std::unique_ptr<Expression> guard; // optional guard condition (if expr)
     std::unique_ptr<Expression> result;
   };
 
   std::vector<std::unique_ptr<Expression>> discriminants; // Values to match on
   std::vector<MatchArm> cases; // Each case has patterns, optional guard, and result
-  std::unique_ptr<Expression> defaultCase; // _ => expr (single underscore for any number of discriminants)
+  std::unique_ptr<Expression>
+      defaultCase; // _ => expr (single underscore for any number of discriminants)
 
   MatchExpression(std::vector<std::unique_ptr<Expression>> disc) : discriminants(std::move(disc)) {
     kind = NodeType::MatchExpression;
   }
 
   std::string toString() const override {
-    return "MatchExpression{" + std::to_string(discriminants.size()) + " discriminants, " + std::to_string(cases.size()) + " cases}";
+    return "MatchExpression{" + std::to_string(discriminants.size()) + " discriminants, " +
+           std::to_string(cases.size()) + " cases}";
   }
 
   void accept(ASTVisitor &visitor) const override;
@@ -3296,19 +3168,14 @@ struct ImportStatement : public Statement {
 // Use Statement (use io, use media) OR (use "file.hv" as alias) OR (use x, y
 // from "file.hv")
 struct UseStatement : public Statement {
-  std::vector<std::string>
-      moduleNames;      // List of module names to flatten (old syntax)
-  std::string filePath; // File path for script import (new syntax)
-    std::string alias; // Alias for imported script (new syntax)
-    std::vector<std::string>
-        importNames; // Named imports from file (use x, y from "file.hv")
-    std::vector<std::string>
-        importAliases; // Corresponding aliases (same size as importNames)
-  bool isFileImport =
-      false; // True if importing file, false if importing module
-  bool isNamedImport =
-      false; // True if using named imports (use x, y from "file.hv")
-  bool isWildcard = false; // True if using wildcard import (use module.*)
+  std::vector<std::string> moduleNames;   // List of module names to flatten (old syntax)
+  std::string filePath;                   // File path for script import (new syntax)
+  std::string alias;                      // Alias for imported script (new syntax)
+  std::vector<std::string> importNames;   // Named imports from file (use x, y from "file.hv")
+  std::vector<std::string> importAliases; // Corresponding aliases (same size as importNames)
+  bool isFileImport = false;              // True if importing file, false if importing module
+  bool isNamedImport = false;             // True if using named imports (use x, y from "file.hv")
+  bool isWildcard = false;                // True if using wildcard import (use module.*)
 
   UseStatement(std::vector<std::string> modules = {})
       : moduleNames(std::move(modules)), isFileImport(false) {
@@ -3321,8 +3188,7 @@ struct UseStatement : public Statement {
   }
 
   UseStatement(const std::string &path, std::vector<std::string> names)
-      : filePath(path), importNames(std::move(names)), isFileImport(true),
-        isNamedImport(true) {
+      : filePath(path), importNames(std::move(names)), isFileImport(true), isNamedImport(true) {
     kind = NodeType::UseStatement;
   }
 
@@ -3376,8 +3242,7 @@ struct ExternBlock : public Statement {
   std::string toString() const override {
     std::string result = "ExternBlock{[";
     for (size_t i = 0; i < functions.size(); ++i) {
-      result += "fn " + functions[i].name + "/" +
-                std::to_string(functions[i].paramCount);
+      result += "fn " + functions[i].name + "/" + std::to_string(functions[i].paramCount);
       if (i < functions.size() - 1)
         result += ", ";
     }
@@ -3390,42 +3255,42 @@ struct ExternBlock : public Statement {
 
 // With Statement (with io { ... })
 struct WithStatement : public Statement {
-    std::unique_ptr<Expression> object; // The expression to bind
-    std::unique_ptr<Identifier> alias;  // Name after 'as' (null if no alias)
-    std::string objectName;            // Legacy: bare identifier name (when no expr)
-    std::vector<std::unique_ptr<Statement>> body; // Block statements
+  std::unique_ptr<Expression> object;           // The expression to bind
+  std::unique_ptr<Identifier> alias;            // Name after 'as' (null if no alias)
+  std::string objectName;                       // Legacy: bare identifier name (when no expr)
+  std::vector<std::unique_ptr<Statement>> body; // Block statements
 
-    WithStatement(std::unique_ptr<Expression> expr,
-        std::unique_ptr<Identifier> aliasName,
-        std::vector<std::unique_ptr<Statement>> stmts = {})
-        : object(std::move(expr)), alias(std::move(aliasName)), body(std::move(stmts)) {
-        kind = NodeType::WithStatement;
+  WithStatement(std::unique_ptr<Expression> expr, std::unique_ptr<Identifier> aliasName,
+                std::vector<std::unique_ptr<Statement>> stmts = {})
+      : object(std::move(expr)), alias(std::move(aliasName)), body(std::move(stmts)) {
+    kind = NodeType::WithStatement;
+  }
+
+  WithStatement(const std::string &name, std::vector<std::unique_ptr<Statement>> stmts = {})
+      : objectName(name), body(std::move(stmts)) {
+    kind = NodeType::WithStatement;
+  }
+
+  std::string toString() const override {
+    std::string result = "WithStatement{";
+    if (object) {
+      result += "object: " + object->toString();
+    } else {
+      result += "object: " + objectName;
     }
-
-    WithStatement(const std::string &name,
-        std::vector<std::unique_ptr<Statement>> stmts = {})
-        : objectName(name), body(std::move(stmts)) {
-        kind = NodeType::WithStatement;
+    if (alias)
+      result += ", as: " + alias->symbol;
+    result += ", body: [";
+    for (size_t i = 0; i < body.size(); ++i) {
+      result += body[i] ? body[i]->toString() : "null";
+      if (i < body.size() - 1)
+        result += ", ";
     }
+    result += "]}";
+    return result;
+  }
 
-    std::string toString() const override {
-        std::string result = "WithStatement{";
-        if (object) {
-            result += "object: " + object->toString();
-        } else {
-            result += "object: " + objectName;
-        }
-        if (alias) result += ", as: " + alias->symbol;
-        result += ", body: [";
-        for (size_t i = 0; i < body.size(); ++i) {
-            result += body[i] ? body[i]->toString() : "null";
-            if (i < body.size() - 1) result += ", ";
-        }
-        result += "]}";
-        return result;
-    }
-
-    void accept(ASTVisitor &visitor) const override;
+  void accept(ASTVisitor &visitor) const override;
 };
 
 // Visitor pattern interface for AST traversal
@@ -3457,8 +3322,7 @@ public:
   virtual void visitOnEventExpression(const OnEventExpression &node) = 0;
   virtual void visitEmitStatement(const EmitStatement &node) = 0;
 
-  virtual void visitInterpolatedStringExpression(
-      const InterpolatedStringExpression &node) = 0;
+  virtual void visitInterpolatedStringExpression(const InterpolatedStringExpression &node) = 0;
 
   virtual void visitNumberLiteral(const NumberLiteral &node) = 0;
 
@@ -3479,10 +3343,8 @@ public:
   virtual void visitSleepStatement(const SleepStatement &node) = 0;
   virtual void visitWaitStatement(const WaitStatement &node) = 0;
   virtual void visitBacktickExpression(const BacktickExpression &node) = 0;
-  virtual void
-  visitShellCommandExpression(const ShellCommandExpression &node) = 0;
-  virtual void
-  visitShellCommandStatement(const ShellCommandStatement &node) = 0;
+  virtual void visitShellCommandExpression(const ShellCommandExpression &node) = 0;
+  virtual void visitShellCommandStatement(const ShellCommandStatement &node) = 0;
   virtual void visitRepeatStatement(const RepeatStatement &node) = 0;
 
   virtual void visitIfStatement(const IfStatement &node) = 0;
@@ -3507,10 +3369,10 @@ public:
   virtual void visitUnionType(const UnionType &node) = 0;
   virtual void visitRecordType(const RecordType &node) = 0;
   virtual void visitFunctionType(const FunctionType &node) = 0;
-    virtual void visitTypeReference(const TypeReference &node) = 0;
-    virtual void visitNullableType(const NullableType &node) = 0;
-    virtual void visitGenericTypeRef(const GenericTypeRef &node) = 0;
-virtual void visitTryExpression(const TryExpression &node) = 0;
+  virtual void visitTypeReference(const TypeReference &node) = 0;
+  virtual void visitNullableType(const NullableType &node) = 0;
+  virtual void visitGenericTypeRef(const GenericTypeRef &node) = 0;
+  virtual void visitTryExpression(const TryExpression &node) = 0;
   virtual void visitUnaryExpression(const UnaryExpression &node) = 0;
   virtual void visitUpdateExpression(const UpdateExpression &node) = 0;
   virtual void visitImportStatement(const ImportStatement &node) = 0;
@@ -3531,16 +3393,16 @@ virtual void visitTryExpression(const TryExpression &node) = 0;
   virtual void visitConfigBlock(const ConfigBlock &node) = 0;
   virtual void visitDevicesBlock(const DevicesBlock &node) = 0;
   virtual void visitModesBlock(const ModesBlock &node) = 0;
- virtual void visitModeBlock(const ModeBlock &node) = 0;
- virtual void visitConfigSection(const ConfigSection &node) = 0;
+  virtual void visitModeBlock(const ModeBlock &node) = 0;
+  virtual void visitConfigSection(const ConfigSection &node) = 0;
   virtual void visitIndexExpression(const IndexExpression &node) = 0;
   virtual void visitAtExpression(const AtExpression &node) = 0;
   virtual void visitAtAtExpression(const AtAtExpression &node) = 0;
   virtual void visitTernaryExpression(const TernaryExpression &node) = 0;
-virtual void visitRangeExpression(const RangeExpression &node) = 0;
-    virtual void visitAssignmentExpression(const AssignmentExpression &node) = 0;
-    virtual void visitMultipleAssignment(const MultipleAssignment &node) = 0;
-    virtual void visitCastExpression(const CastExpression &node) = 0;
+  virtual void visitRangeExpression(const RangeExpression &node) = 0;
+  virtual void visitAssignmentExpression(const AssignmentExpression &node) = 0;
+  virtual void visitMultipleAssignment(const MultipleAssignment &node) = 0;
+  virtual void visitCastExpression(const CastExpression &node) = 0;
   virtual void visitMatchExpression(const MatchExpression &node) = 0;
   virtual void visitThrowStatement(const ThrowStatement &node) = 0;
   virtual void visitDelStatement(const DelStatement &node) = 0;
@@ -3555,7 +3417,7 @@ virtual void visitRangeExpression(const RangeExpression &node) = 0;
   virtual void visitIntervalExpression(const IntervalExpression &node) = 0;
   virtual void visitUpdateBlockExpression(const UpdateBlockExpression &node) = 0;
   virtual void visitTimeoutExpression(const TimeoutExpression &node) = 0;
- virtual void visitYieldExpression(const YieldExpression &node) = 0;
+  virtual void visitYieldExpression(const YieldExpression &node) = 0;
   virtual void visitGoStatement(const GoStatement &node) = 0;
   virtual void visitGoExpression(const GoExpression &node) = 0;
   virtual void visitChannelExpression(const ChannelExpression &node) = 0;
@@ -3824,11 +3686,11 @@ inline void ModesBlock::accept(ASTVisitor &visitor) const {
 }
 
 inline void ModeBlock::accept(ASTVisitor &visitor) const {
- visitor.visitModeBlock(*this);
+  visitor.visitModeBlock(*this);
 }
 
 inline void ConfigSection::accept(ASTVisitor &visitor) const {
- visitor.visitConfigSection(*this);
+  visitor.visitConfigSection(*this);
 }
 
 inline void IndexExpression::accept(ASTVisitor &visitor) const {
@@ -3844,11 +3706,11 @@ inline void RangeExpression::accept(ASTVisitor &visitor) const {
 }
 
 inline void AssignmentExpression::accept(ASTVisitor &visitor) const {
-visitor.visitAssignmentExpression(*this);
+  visitor.visitAssignmentExpression(*this);
 }
 
 inline void MultipleAssignment::accept(ASTVisitor &visitor) const {
-visitor.visitMultipleAssignment(*this);
+  visitor.visitMultipleAssignment(*this);
 }
 
 inline void CastExpression::accept(ASTVisitor &visitor) const {
@@ -3936,19 +3798,19 @@ inline void FunctionType::accept(ASTVisitor &visitor) const {
 }
 
 inline void TypeReference::accept(ASTVisitor &visitor) const {
-    visitor.visitTypeReference(*this);
+  visitor.visitTypeReference(*this);
 }
 
 inline void NullableType::accept(ASTVisitor &visitor) const {
-    visitor.visitNullableType(*this);
+  visitor.visitNullableType(*this);
 }
 
 inline void GenericTypeRef::accept(ASTVisitor &visitor) const {
-    visitor.visitGenericTypeRef(*this);
+  visitor.visitGenericTypeRef(*this);
 }
 
 inline void TryExpression::accept(ASTVisitor &visitor) const {
-    visitor.visitTryExpression(*this);
+  visitor.visitTryExpression(*this);
 }
 
 inline void ThrowStatement::accept(ASTVisitor &visitor) const {

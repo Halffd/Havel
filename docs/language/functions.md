@@ -25,7 +25,44 @@ fn add(a, b) { a + b }              // positional
 fn add(a: int, b: int) -> int { a + b }  // with types
 fn greet(name = "world") { "hello {name}" }  // default values
 fn variadic(first, ...rest) { rest }  // rest parameter
+fn accumulate(ref total, delta) { total = total + delta }  // by reference
 ```
+
+### By-reference parameters (`ref`)
+
+```hv
+fn accumulate(ref total, delta) {
+    total = total + delta      // writes the caller's variable
+}
+
+sum = 0
+accumulate(ref sum, 10)
+accumulate(ref sum, 5)         // sum == 15
+```
+
+`ref` marks a by-reference parameter (C# semantics). The call site must
+mark the argument too: `accumulate(ref sum, 10)`. Inside the function the
+parameter behaves as an ordinary variable — reads, writes, compound
+assignment, capture by a closure, and passing it through to another `ref`
+parameter all alias the caller's variable.
+
+The marker and the declaration must agree; mismatches are compile errors:
+
+```hv
+accumulate(sum, 10)        // error: parameter 1 of 'accumulate' is 'ref'
+byvalue(ref sum)           // error: parameter 1 of 'byvalue' is not 'ref'
+accumulate(ref 10, 5)      // error: 'ref' argument must be a variable
+```
+
+Scope notes:
+
+- A `ref` argument may be a local, global, or captured upvalue; it must be
+  a variable, not an expression.
+- Passing a function's own `ref` parameter on (`inner(ref v)`) forwards the
+  same reference without re-boxing.
+- Verified only for calls to top-level functions; a call through a local
+  function value, a class/struct method, or a host function cannot be
+  checked and is refused.
 
 ## Implicit Return
 

@@ -1216,18 +1216,8 @@ std::unique_ptr<ast::Expression> Parser::nud(const Token &token) {
 
   case TokenType::Identifier:
   case TokenType::Config:
-  case TokenType::Devices: {
-    auto ident = makeIdentifier(token);
-    // A ref-declared name reads as its box's `_val`, so `when x > 5` and
-    // `x + 1` see the current value and `x = v` (a member assignment) writes
-    // back through the box.
-    if (refNames_.count(ident->symbol)) {
-      auto access = makeNodeAt<ast::MemberExpression>(token, std::move(ident),
-                                                      makeNodeAt<ast::Identifier>(token, "_val"));
-      return access;
-    }
-    return ident;
-  }
+  case TokenType::Devices:
+    return makeIdentifier(token);
 
   case TokenType::Is: {
     errorAt(token,
@@ -2148,6 +2138,7 @@ std::unique_ptr<ast::Expression> Parser::led(const Token &token,
   // Function call
   case TokenType::OpenParen: {
     std::vector<std::unique_ptr<ast::Expression>> args;
+    std::vector<bool> argsRef; // parallel to args: `f(ref x)` markers
     std::vector<ast::KeywordArg> kwargs;
 
     // Parse arguments
@@ -2174,10 +2165,23 @@ std::unique_ptr<ast::Expression> Parser::led(const Token &token,
         break;
       }
 
+      // Check for a by-reference argument marker: `f(ref x)` (C#-style).
+      // Must precede the keyword-arg check and the positional parse: `ref`
+      // is a normal identifier elsewhere, so only `ref <name>` in argument
+      // position marks; a variable named ref passed alone (`f(ref)`) is a
+      // plain positional argument.
+      bool argIsRef = false;
+      if (at().type == TokenType::Identifier && at().value == "ref" &&
+          at(1).type != TokenType::OpenParen && at(1).type != TokenType::Comma &&
+          at(1).type != TokenType::CloseParen && at(1).type != TokenType::Assign) {
+        advance(); // consume 'ref'
+        argIsRef = true;
+      }
+
       // Check for keyword argument: name=value
       // Must check BEFORE calling parsePrattExpression to avoid treating
       // '=' as an assignment operator
-      if (at().type == TokenType::Identifier && at(1).type == TokenType::Assign) {
+      if (!argIsRef && at().type == TokenType::Identifier && at(1).type == TokenType::Assign) {
         std::string name = advance().value; // consume identifier
         advance();                          // consume '='
         auto value = parsePrattExpression(0);
@@ -2193,6 +2197,7 @@ std::unique_ptr<ast::Expression> Parser::led(const Token &token,
           arg = parsePrattExpression(0);
         }
         args.push_back(std::move(arg));
+        argsRef.push_back(argIsRef);
       }
 
       // Skip newlines after argument
@@ -2271,7 +2276,7 @@ std::unique_ptr<ast::Expression> Parser::led(const Token &token,
     }
 
     return makeNodeAt<ast::CallExpression>(token, std::move(left), std::move(args),
-                                           std::move(kwargs));
+                                           std::move(kwargs), std::move(argsRef));
   }
 
   // Array/Object index or slice
@@ -3050,16 +3055,6 @@ std::unique_ptr<havel::ast::Statement> Parser::parseInlineStatement() {
   }
 
   // Parse based on current token
-  // `ref name = value`: reactive-box declaration. Contextual: `ref` stays a
-  // normal identifier everywhere else (the ref(0) call still works).
-  if (at().type == havel::TokenType::Identifier && at().value == "ref" &&
-      at(1).type == havel::TokenType::Identifier) {
-    bool ref_decl =
-        at(2).type == havel::TokenType::Assign ||
-        (at(2).type == havel::TokenType::Colon && at(3).type == havel::TokenType::Assign);
-    if (ref_decl)
-      return parseRefDeclaration();
-  }
   switch (at().type) {
   case havel::TokenType::Colon:
     return parseSleepStatement();
@@ -3327,16 +3322,6 @@ std::unique_ptr<havel::ast::Statement> Parser::parseStatement() {
     position = savePos;
   }
 
-  // `ref name = value`: reactive-box declaration. Contextual: `ref` stays a
-  // normal identifier everywhere else (the ref(0) call still works).
-  if (at().type == havel::TokenType::Identifier && at().value == "ref" &&
-      at(1).type == havel::TokenType::Identifier) {
-    bool ref_decl =
-        at(2).type == havel::TokenType::Assign ||
-        (at(2).type == havel::TokenType::Colon && at(3).type == havel::TokenType::Assign);
-    if (ref_decl)
-      return parseRefDeclaration();
-  }
   switch (at().type) {
   case havel::TokenType::Hotkey: {
     // dsl { } sugar: '!!' re-emits the previous input command batch. The
@@ -4561,6 +4546,15 @@ std::unique_ptr<havel::ast::Statement> Parser::parseFunctionDeclaration() {
 
     // Check for variadic parameter: ...args
     bool isVariadic = false;
+    // Check for C#-style by-reference parameter: `ref x`. Contextual: the
+    // marker is only consumed when directly followed by a parameter name,
+    // so a parameter literally named `ref` still parses.
+    bool isRef = false;
+    if (at().type == havel::TokenType::Identifier && at().value == "ref" &&
+        at(1).type == havel::TokenType::Identifier) {
+      advance(); // consume 'ref'
+      isRef = true;
+    }
     std::unique_ptr<havel::ast::Expression> pattern;
 
     if (at().type == havel::TokenType::Spread) {
@@ -4595,7 +4589,7 @@ std::unique_ptr<havel::ast::Statement> Parser::parseFunctionDeclaration() {
     }
 
     params.push_back(makeNode<havel::ast::FunctionParameter>(
-        std::move(pattern), std::move(defaultValue), std::move(typeAnnotation), isVariadic));
+        std::move(pattern), std::move(defaultValue), std::move(typeAnnotation), isVariadic, isRef));
 
     while (at().type == havel::TokenType::NewLine) {
       advance();
@@ -8280,53 +8274,6 @@ std::unique_ptr<havel::ast::Statement> Parser::parseOnKeyDownOrKeyUpStatement() 
   } else {
     return makeNode<havel::ast::OnKeyUpStatement>(keys, std::move(actionBlock));
   }
-}
-
-// `ref name = value` - declare a reactive box.
-//
-// Desugars to `name = ref(value)`: the host function allocates
-// {_val: value}, which is what `when` watchers already observe. The name is
-// then marked so every later expression-position use compiles to `name._val`
-// (nud), making reads see the value and assignments write back through the
-// box. Declaration must precede first use.
-std::unique_ptr<havel::ast::Statement> Parser::parseRefDeclaration() {
-  auto refToken = at();
-  advance(); // consume 'ref'
-
-  if (at().type != havel::TokenType::Identifier) {
-    failAt(at(), "expected a name after 'ref'");
-    return nullptr;
-  }
-  auto nameTok = advance();
-
-  // Optional type annotation, mirroring `val x: int = 5`.
-  if (at().type == havel::TokenType::Colon) {
-    (void)parseTypeAnnotation();
-  }
-
-  if (at().type != havel::TokenType::Assign) {
-    failAt(at(), "expected '=' after 'ref " + nameTok.value + "'");
-    return nullptr;
-  }
-  advance(); // consume '='
-
-  // Record before parsing the value so the initializer may reference
-  // already-declared refs (and this ref's own name is not rewritten inside
-  // its initializer - it is declared here, shadowing nothing).
-  refNames_.insert(nameTok.value);
-
-  auto value = parseExpression();
-
-  // name = ref(value)
-  auto callee = makeNodeAt<havel::ast::Identifier>(refToken, "ref");
-  std::vector<std::unique_ptr<havel::ast::Expression>> callArgs;
-  callArgs.push_back(std::move(value));
-  auto call = makeNodeAt<havel::ast::CallExpression>(refToken, std::move(callee),
-                                                    std::move(callArgs));
-  auto target = makeNodeAt<havel::ast::Identifier>(nameTok, nameTok.value);
-  auto assign = makeNodeAt<havel::ast::AssignmentExpression>(
-      nameTok, std::move(target), std::move(call));
-  return makeNodeAt<havel::ast::ExpressionStatement>(nameTok, std::move(assign));
 }
 
 std::unique_ptr<havel::ast::Statement> Parser::parseLetDeclaration() {

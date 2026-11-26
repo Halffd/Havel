@@ -446,6 +446,7 @@ std::unique_ptr<BytecodeChunk> ByteCompiler::compileImpl(const ast::Program &pro
   trait_method_indices_by_node_.clear();
   lambda_indices_by_node_.clear();
   top_level_function_indices_by_name_.clear();
+  ref_signatures_.clear();
   top_level_struct_names_.clear();
   top_level_class_names_.clear();
   top_level_protocol_names_.clear();
@@ -561,6 +562,15 @@ std::unique_ptr<BytecodeChunk> ByteCompiler::compileImpl(const ast::Program &pro
       COMPILER_THROW("Function declaration missing name");
     }
     top_level_function_indices_by_name_[fnDecl->name->symbol] = next_function_index;
+    // C#-style ref parameter signature, recorded for call-site verification.
+    {
+      std::vector<bool> is_ref;
+      is_ref.reserve(fnDecl->parameters.size());
+      for (const auto &p : fnDecl->parameters) {
+        is_ref.push_back(p && p->isRef);
+      }
+      ref_signatures_[fnDecl->name->symbol] = std::move(is_ref);
+    }
     function_indices_by_node_[fnDecl] = next_function_index++;
   }
 
@@ -1393,6 +1403,24 @@ void ByteCompiler::compileFunction(const ast::FunctionDeclaration &function) {
 
   enterFunction(std::move(bf), index_it->second);
   next_local_index = max_slot;
+  // C#-style ref parameters: this function's ref names plus those of every
+  // enclosing function (fn_parent_ records the static nesting chain, since
+  // all functions compile in one flat loop and the enclosing compile's
+  // dynamic scope is long gone). Restored on exit so siblings do not
+  // inherit them.
+  std::set<std::string> saved_ref_param_names = ref_param_names_;
+  for (const ast::FunctionDeclaration *decl = &function; decl;) {
+    auto parent_it = fn_parent_.find(decl);
+    for (const auto &param : decl->parameters) {
+      if (param && param->isRef && param->pattern &&
+          param->pattern->kind == ast::NodeType::Identifier) {
+        ref_param_names_.insert(static_cast<const ast::Identifier &>(*param->pattern).symbol);
+      }
+    }
+    if (parent_it == fn_parent_.end())
+      break;
+    decl = parent_it->second;
+  }
   auto upvalues_it = lexical_resolution_.function_upvalues.find(&function);
   if (upvalues_it != lexical_resolution_.function_upvalues.end()) {
     current_function->upvalues = upvalues_it->second;
@@ -1614,6 +1642,7 @@ void ByteCompiler::compileFunction(const ast::FunctionDeclaration &function) {
     current_class_name_ = "";
   }
 
+  ref_param_names_ = saved_ref_param_names;
   leaveFunction();
 }
 
@@ -3814,8 +3843,7 @@ void ByteCompiler::compileExternBlock(const ast::ExternBlock &statement) {
     emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(checkSid));
     uint32_t nameSid = addStringConstant(fn.name);
     emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(nameSid)));
-    emit(OpCode::LOAD_CONST,
-         addConstant(Value::makeInt(static_cast<int64_t>(fn.paramCount))));
+    emit(OpCode::LOAD_CONST, addConstant(Value::makeInt(static_cast<int64_t>(fn.paramCount))));
     emit(OpCode::CALL, 2);
     emit(OpCode::POP);
   }
@@ -4718,6 +4746,13 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
     // locals - they must not be converted to field access (e.g. `@x = x`
     // where `x` is both a param and a field).
     warnIfBareClassMemberLost(binding->name);
+    // A `ref` parameter's slot holds the reference box; reading the name
+    // reads `_val` out of it.
+    if (ref_param_names_.count(binding->name) && (binding->kind == ResolvedBindingKind::Local ||
+                                                  binding->kind == ResolvedBindingKind::Upvalue)) {
+      emitRefParamLoad(*binding);
+      break;
+    }
     if (binding->kind == ResolvedBindingKind::Global && bareMemberResolves(binding->name)) {
       // Treat as implicit class member access
       emitSelfReceiver();
@@ -5255,8 +5290,7 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
         // stage's result (its stdout) as stdin, so `cat f` | `grep x` |
         // `wc -l` composes real processes instead of running detached
         // commands. The final value is the last stage's result object.
-        const auto &shellStage =
-            static_cast<const ast::ShellCommandExpression &>(*stage);
+        const auto &shellStage = static_cast<const ast::ShellCommandExpression &>(*stage);
         uint32_t runResultSid = addStringConstant("runResult");
         emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(runResultSid));
         if (shellStage.commandExpr) {
@@ -5401,6 +5435,12 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
       if (binding.is_const) {
         COMPILER_THROW("Cannot assign to const binding: " + binding.name);
       }
+      // `ref` parameter assignment writes through the box (_val).
+      if (ref_param_names_.count(binding.name) && (binding.kind == ResolvedBindingKind::Local ||
+                                                   binding.kind == ResolvedBindingKind::Upvalue)) {
+        emitRefParamStore(binding, /*returns_value=*/true);
+        return;
+      }
       emit(OpCode::DUP);
       if (binding.kind == ResolvedBindingKind::Local) {
         emit(OpCode::STORE_VAR, binding.slot);
@@ -5454,6 +5494,13 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
     auto emitLoadIdentifier = [&](const ResolvedBinding &binding) {
       if (binding.is_const && assignment.operator_ != "=") {
         COMPILER_THROW("Cannot mutate const binding: " + binding.name);
+      }
+      // A `ref` parameter reads through its box (_val), so compound ops
+      // operate on the current value the caller sees.
+      if (ref_param_names_.count(binding.name) && (binding.kind == ResolvedBindingKind::Local ||
+                                                   binding.kind == ResolvedBindingKind::Upvalue)) {
+        emitRefParamLoad(binding);
+        return;
       }
       // Check for bare class member access (implicit @self.field)
       // Only Global bindings are candidates: Local bindings (params/locals
@@ -6598,6 +6645,37 @@ void ByteCompiler::compileCallExpression(const ast::CallExpression &expression) 
   bool saved_tail_position = in_tail_position_;
   in_tail_position_ = false;
 
+  // C#-style ref arguments: any `f(ref x)` marker routes to the dedicated
+  // path, keeping the box/write-back code out of every ordinary call path.
+  bool has_ref_args = false;
+  for (size_t i = 0; i < expression.args.size() && i < expression.argsRef.size(); ++i) {
+    if (expression.argsRef[i]) {
+      has_ref_args = true;
+      break;
+    }
+  }
+  // Also route a call whose CALLEE declares a ref parameter but carries no
+  // marker: C# requires the marker, so the missing-marker case must be a
+  // compile error, verified by the same path.
+  bool callee_has_ref_param = false;
+  if (!has_ref_args && expression.callee && expression.callee->kind == ast::NodeType::Identifier) {
+    const auto &cid = static_cast<const ast::Identifier &>(*expression.callee);
+    auto sig_lookup = ref_signatures_.find(cid.symbol);
+    if (sig_lookup != ref_signatures_.end()) {
+      for (bool is_ref_pos : sig_lookup->second) {
+        if (is_ref_pos) {
+          callee_has_ref_param = true;
+          break;
+        }
+      }
+    }
+  }
+  if (has_ref_args || callee_has_ref_param) {
+    compileRefCallExpression(expression);
+    in_tail_position_ = saved_tail_position;
+    return;
+  }
+
   // Handle super calls for prototype inheritance (@->method())
   if (expression.isSuperCall) {
     if (current_parent_class_name_.empty()) {
@@ -7515,8 +7593,7 @@ void ByteCompiler::compileCallExpression(const ast::CallExpression &expression) 
       // runtime arity check (the compiler only knows their name, not their
       // arity, unless the caller declares it). Spread calls are not
       // statically sized and are skipped.
-      if (auto extIt = extern_arities_.find(binding->name);
-          extIt != extern_arities_.end()) {
+      if (auto extIt = extern_arities_.find(binding->name); extIt != extern_arities_.end()) {
         bool hasSpread = false;
         for (const auto &arg : expression.args) {
           if (arg && arg->kind == ast::NodeType::SpreadExpression) {
@@ -7525,10 +7602,8 @@ void ByteCompiler::compileCallExpression(const ast::CallExpression &expression) 
           }
         }
         if (!hasSpread && expression.args.size() != extIt->second) {
-          COMPILER_THROW("extern function '" + binding->name +
-                         "' is declared with " +
-                         std::to_string(extIt->second) +
-                         " parameter(s), called with " +
+          COMPILER_THROW("extern function '" + binding->name + "' is declared with " +
+                         std::to_string(extIt->second) + " parameter(s), called with " +
                          std::to_string(expression.args.size()));
         }
       }
@@ -7865,6 +7940,220 @@ void ByteCompiler::compileCallExpression(const ast::CallExpression &expression) 
       }
     }
     emit(OpCode::CALL, actualArgCount);
+  }
+}
+
+// A `ref` parameter's slot holds the shared {_val: value} box; reading the
+// name reads _val out of it (through the slot, or through the upvalue when a
+// closure captured it).
+void ByteCompiler::emitRefParamLoad(const ResolvedBinding &binding) {
+  if (binding.kind == ResolvedBindingKind::Local) {
+    emit(OpCode::LOAD_VAR, binding.slot);
+  } else if (binding.kind == ResolvedBindingKind::Upvalue) {
+    emit(OpCode::LOAD_UPVALUE, binding.slot);
+  } else {
+    COMPILER_THROW("Internal: ref parameter binding must be local or upvalue: " + binding.name);
+  }
+  {
+    uint32_t sid = addStringConstant("_val");
+    emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(sid)));
+  }
+  emit(OpCode::OBJECT_GET);
+}
+
+// Loads the reference box itself (the param slot/upvalue), for OBJECT_SET's
+// [obj, value, key] order.
+// Assigning to a `ref` parameter writes through the box. The RHS value is on
+// the stack; when returns_value the value is left as the expression result,
+// otherwise it is consumed.
+void ByteCompiler::emitRefParamStore(const ResolvedBinding &binding, bool returns_value) {
+  uint32_t temp_val = next_local_index;
+  reserveLocalSlot(temp_val);
+  emit(OpCode::STORE_VAR, temp_val); // stash value
+  if (binding.kind == ResolvedBindingKind::Local) {
+    emit(OpCode::LOAD_VAR, binding.slot);
+  } else {
+    emit(OpCode::LOAD_UPVALUE, binding.slot);
+  }
+  emit(OpCode::LOAD_VAR, temp_val); // [box, value]
+  {
+    uint32_t sid = addStringConstant("_val");
+    emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(sid)));
+  }
+  emit(OpCode::OBJECT_SET); // [box]
+  emit(OpCode::POP);        // []
+  if (returns_value) {
+    emit(OpCode::LOAD_VAR, temp_val); // result = RHS
+  }
+}
+
+// C#-style ref call: `f(ref a)` for a declared `fn f(ref x)`.
+//
+// The callee's `x` slot holds a box shared with the caller's `a`; writes to
+// `x` land in the box, and the caller's variable is synced from the box after
+// the call. Verified against the callee's declared signature, so `f(ref a)`
+// against a by-value parameter - and the reverse - is a compile error, as in
+// C#.
+void ByteCompiler::compileRefCallExpression(const ast::CallExpression &expression) {
+  if (expression.isSuperCall) {
+    COMPILER_THROW("'ref' arguments are not supported for super calls");
+  }
+  if (!expression.callee || expression.callee->kind != ast::NodeType::Identifier) {
+    COMPILER_THROW("'ref' arguments require a named function "
+                   "(C#-style by-reference parameters)");
+  }
+  const auto &callee_id = static_cast<const ast::Identifier &>(*expression.callee);
+  if (expression.kwargs.size() > 0) {
+    COMPILER_THROW("'ref' arguments cannot be combined with keyword arguments");
+  }
+
+  auto sig_it = ref_signatures_.find(callee_id.symbol);
+  if (sig_it == ref_signatures_.end()) {
+    COMPILER_THROW("'ref' argument: '" + callee_id.symbol +
+                   "' has no declared parameters - only a function declaring "
+                   "the parameter as 'ref' can take 'ref' arguments");
+  }
+  const std::vector<bool> &is_ref = sig_it->second;
+
+  // A local/upvalue binding of the same name calls a different function than
+  // the declaration the signature came from; refuse rather than misverify.
+  if (const auto *binding = bindingFor(callee_id)) {
+    if (binding->kind == ResolvedBindingKind::Local ||
+        binding->kind == ResolvedBindingKind::Upvalue) {
+      COMPILER_THROW("'ref' calls are only verified for top-level functions: '" + callee_id.symbol +
+                     "' resolves to a local value");
+    }
+  }
+
+  if (expression.args.size() > is_ref.size()) {
+    COMPILER_THROW("'" + callee_id.symbol + "' takes " + std::to_string(is_ref.size()) +
+                   " parameters, got " + std::to_string(expression.args.size()));
+  }
+
+  // Create each ref argument's box before the call sequence. Pass-through: an
+  // argument naming a `ref` parameter of the current function is already a
+  // reference - its box is passed along and its write-back is left to the
+  // enclosing call site.
+  struct WriteBack {
+    uint32_t box_slot;
+    const ResolvedBinding *target;
+  };
+  std::vector<WriteBack> writebacks;
+
+  for (size_t i = 0; i < expression.args.size(); ++i) {
+    bool marker = i < expression.argsRef.size() && expression.argsRef[i];
+    const ast::Expression *arg = expression.args[i].get();
+    const auto *arg_id = arg ? dynamic_cast<const ast::Identifier *>(arg) : nullptr;
+
+    if (marker) {
+      if (!arg_id) {
+        COMPILER_THROW("'ref' argument must be a variable");
+      }
+      if (i < is_ref.size() && !is_ref[i]) {
+        COMPILER_THROW("parameter " + std::to_string(i + 1) + " of '" + callee_id.symbol +
+                       "' is not 'ref'; pass it as a plain argument");
+      }
+      const auto *binding = bindingFor(*arg_id);
+      if (!binding) {
+        COMPILER_THROW("Missing lexical binding for ref argument: " + arg_id->symbol);
+      }
+      // Pass-through: this function's own ref parameter - already a box.
+      if (ref_param_names_.count(arg_id->symbol) &&
+          (binding->kind == ResolvedBindingKind::Local ||
+           binding->kind == ResolvedBindingKind::Upvalue)) {
+        continue;
+      }
+      if (binding->is_const) {
+        COMPILER_THROW("Cannot pass const binding as 'ref': " + arg_id->symbol);
+      }
+      // Box the variable's current value: {_val: value}
+      uint32_t slot = next_local_index;
+      reserveLocalSlot(slot);
+      emit(OpCode::OBJECT_NEW); // [box]
+      if (binding->kind == ResolvedBindingKind::Local) {
+        emit(OpCode::LOAD_VAR, binding->slot);
+      } else if (binding->kind == ResolvedBindingKind::Upvalue) {
+        emit(OpCode::LOAD_UPVALUE, binding->slot);
+      } else if (binding->kind == ResolvedBindingKind::Global) {
+        uint32_t strId = addStringConstant(binding->name);
+        emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
+      } else {
+        COMPILER_THROW("'ref' argument must be a variable");
+      }
+      {
+        uint32_t sid = addStringConstant("_val");
+        emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(sid)));
+      }
+      emit(OpCode::OBJECT_SET); // [box]
+      emit(OpCode::STORE_VAR, slot);
+      writebacks.push_back(WriteBack{slot, binding});
+      continue;
+    }
+    if (is_ref[i]) {
+      COMPILER_THROW("parameter " + std::to_string(i + 1) + " of '" + callee_id.symbol +
+                     "' is 'ref'; pass it as 'ref " + callee_id.symbol + "'");
+    }
+  }
+
+  // Callee, then the argument list (boxes or ordinary values).
+  {
+    uint32_t strId = addStringConstant(callee_id.symbol);
+    emit(OpCode::LOAD_GLOBAL, Value::makeStringValId(strId));
+  }
+  for (size_t i = 0; i < expression.args.size(); ++i) {
+    bool marker = i < expression.argsRef.size() && expression.argsRef[i];
+    const ast::Expression *arg = expression.args[i].get();
+    const auto *arg_id = arg ? dynamic_cast<const ast::Identifier *>(arg) : nullptr;
+    if (marker) {
+      const auto *binding = bindingFor(*arg_id);
+      bool pass_through = arg_id && binding && ref_param_names_.count(arg_id->symbol) &&
+                          (binding->kind == ResolvedBindingKind::Local ||
+                           binding->kind == ResolvedBindingKind::Upvalue);
+      if (pass_through) {
+        // Load the existing box as the argument.
+        if (binding->kind == ResolvedBindingKind::Local) {
+          emit(OpCode::LOAD_VAR, binding->slot);
+        } else {
+          emit(OpCode::LOAD_UPVALUE, binding->slot);
+        }
+        continue;
+      }
+      const ResolvedBinding *target = nullptr;
+      uint32_t slot = 0;
+      for (const auto &wb : writebacks) {
+        if (wb.target == binding) {
+          slot = wb.box_slot;
+          target = wb.target;
+          break;
+        }
+      }
+      if (!target) {
+        COMPILER_THROW("Internal: ref argument box slot not found: " + arg_id->symbol);
+      }
+      emit(OpCode::LOAD_VAR, slot); // [box]
+      continue;
+    }
+    compileExpression(*expression.args[i]);
+  }
+  emit(OpCode::CALL, static_cast<uint32_t>(expression.args.size()));
+
+  // Write-back: sync each boxed caller variable from its box. The call result
+  // stays on the stack underneath.
+  for (const auto &wb : writebacks) {
+    emit(OpCode::LOAD_VAR, wb.box_slot); // [result, box]
+    {
+      uint32_t sid = addStringConstant("_val");
+      emit(OpCode::LOAD_CONST, addConstant(Value::makeStringValId(sid)));
+    }
+    emit(OpCode::OBJECT_GET); // [result, value]
+    if (wb.target->kind == ResolvedBindingKind::Local) {
+      emit(OpCode::STORE_VAR, wb.target->slot);
+    } else if (wb.target->kind == ResolvedBindingKind::Upvalue) {
+      emit(OpCode::STORE_UPVALUE, wb.target->slot);
+    } else {
+      uint32_t strId = addStringConstant(wb.target->name);
+      emit(OpCode::STORE_GLOBAL, Value::makeStringValId(strId));
+    }
   }
 }
 
@@ -8687,18 +8976,23 @@ void ByteCompiler::collectOnEventStatements(const ast::Statement &statement,
   }
 }
 
-void ByteCompiler::collectFunctionDeclarations(
-    const ast::Statement &statement, std::vector<const ast::FunctionDeclaration *> &out) const {
+void ByteCompiler::collectFunctionDeclarations(const ast::Statement &statement,
+                                               std::vector<const ast::FunctionDeclaration *> &out,
+                                               const ast::FunctionDeclaration *parent) {
   switch (statement.kind) {
   case ast::NodeType::FunctionDeclaration: {
     const auto &function = static_cast<const ast::FunctionDeclaration &>(statement);
     out.push_back(&function);
+    // Parent links let compileFunction seed a nested function with its
+    // ancestors' `ref` parameter names (functions compile in one flat loop,
+    // so the dynamic scope of the enclosing compile is gone by then).
+    fn_parent_[&function] = parent;
     if (function.body) {
       for (const auto &nested : function.body->body) {
         if (!nested) {
           continue;
         }
-        collectFunctionDeclarations(*nested, out);
+        collectFunctionDeclarations(*nested, out, &function);
       }
     }
     break;
@@ -8710,7 +9004,7 @@ void ByteCompiler::collectFunctionDeclarations(
       if (!nested) {
         continue;
       }
-      collectFunctionDeclarations(*nested, out);
+      collectFunctionDeclarations(*nested, out, parent);
     }
     break;
   }
@@ -8718,10 +9012,10 @@ void ByteCompiler::collectFunctionDeclarations(
   case ast::NodeType::IfStatement: {
     const auto &if_statement = static_cast<const ast::IfStatement &>(statement);
     if (if_statement.consequence) {
-      collectFunctionDeclarations(*if_statement.consequence, out);
+      collectFunctionDeclarations(*if_statement.consequence, out, parent);
     }
     if (if_statement.alternative) {
-      collectFunctionDeclarations(*if_statement.alternative, out);
+      collectFunctionDeclarations(*if_statement.alternative, out, parent);
     }
     break;
   }
@@ -8729,7 +9023,7 @@ void ByteCompiler::collectFunctionDeclarations(
   case ast::NodeType::WhileStatement: {
     const auto &while_statement = static_cast<const ast::WhileStatement &>(statement);
     if (while_statement.body) {
-      collectFunctionDeclarations(*while_statement.body, out);
+      collectFunctionDeclarations(*while_statement.body, out, parent);
     }
     break;
   }
@@ -8737,13 +9031,13 @@ void ByteCompiler::collectFunctionDeclarations(
   case ast::NodeType::TryExpression: {
     const auto &try_expr = static_cast<const ast::TryExpression &>(statement);
     if (try_expr.tryBody) {
-      collectFunctionDeclarations(*try_expr.tryBody, out);
+      collectFunctionDeclarations(*try_expr.tryBody, out, parent);
     }
     if (try_expr.catchBody) {
-      collectFunctionDeclarations(*try_expr.catchBody, out);
+      collectFunctionDeclarations(*try_expr.catchBody, out, parent);
     }
     if (try_expr.finallyBlock) {
-      collectFunctionDeclarations(*try_expr.finallyBlock, out);
+      collectFunctionDeclarations(*try_expr.finallyBlock, out, parent);
     }
     break;
   }
@@ -8756,7 +9050,7 @@ void ByteCompiler::collectFunctionDeclarations(
       if (method && method->body) {
         for (const auto &nested : method->body->body) {
           if (nested) {
-            collectFunctionDeclarations(*nested, out);
+            collectFunctionDeclarations(*nested, out, parent);
           }
         }
       }
@@ -8767,7 +9061,7 @@ void ByteCompiler::collectFunctionDeclarations(
   case ast::NodeType::DecoratorStatement: {
     const auto &dec = static_cast<const ast::DecoratorStatement &>(statement);
     if (dec.target) {
-      collectFunctionDeclarations(*dec.target, out);
+      collectFunctionDeclarations(*dec.target, out, parent);
     }
     break;
   }
@@ -8777,10 +9071,11 @@ void ByteCompiler::collectFunctionDeclarations(
     for (const auto &method : impl.funcs) {
       if (method) {
         out.push_back(method.get());
+        fn_parent_[method.get()] = parent;
         if (method->body) {
           for (const auto &nested : method->body->body) {
             if (nested) {
-              collectFunctionDeclarations(*nested, out);
+              collectFunctionDeclarations(*nested, out, method.get());
             }
           }
         }
@@ -8792,7 +9087,7 @@ void ByteCompiler::collectFunctionDeclarations(
   case ast::NodeType::ForStatement: {
     const auto &for_stmt = static_cast<const ast::ForStatement &>(statement);
     if (for_stmt.body) {
-      collectFunctionDeclarations(*for_stmt.body, out);
+      collectFunctionDeclarations(*for_stmt.body, out, parent);
     }
     break;
   }
@@ -8800,7 +9095,7 @@ void ByteCompiler::collectFunctionDeclarations(
   case ast::NodeType::LoopStatement: {
     const auto &loop_stmt = static_cast<const ast::LoopStatement &>(statement);
     if (loop_stmt.body) {
-      collectFunctionDeclarations(*loop_stmt.body, out);
+      collectFunctionDeclarations(*loop_stmt.body, out, parent);
     }
     break;
   }
@@ -8808,7 +9103,7 @@ void ByteCompiler::collectFunctionDeclarations(
   case ast::NodeType::DoWhileStatement: {
     const auto &do_while = static_cast<const ast::DoWhileStatement &>(statement);
     if (do_while.body) {
-      collectFunctionDeclarations(*do_while.body, out);
+      collectFunctionDeclarations(*do_while.body, out, parent);
     }
     break;
   }
@@ -8817,7 +9112,7 @@ void ByteCompiler::collectFunctionDeclarations(
     const auto &switch_stmt = static_cast<const ast::SwitchStatement &>(statement);
     for (const auto &case_node : switch_stmt.cases) {
       if (case_node && case_node->body) {
-        collectFunctionDeclarations(*case_node->body, out);
+        collectFunctionDeclarations(*case_node->body, out, parent);
       }
     }
     break;
@@ -8826,10 +9121,10 @@ void ByteCompiler::collectFunctionDeclarations(
   case ast::NodeType::OnModeStatement: {
     const auto &on_mode = static_cast<const ast::OnModeStatement &>(statement);
     if (on_mode.body) {
-      collectFunctionDeclarations(*on_mode.body, out);
+      collectFunctionDeclarations(*on_mode.body, out, parent);
     }
     if (on_mode.alternative) {
-      collectFunctionDeclarations(*on_mode.alternative, out);
+      collectFunctionDeclarations(*on_mode.alternative, out, parent);
     }
     break;
   }
@@ -8837,7 +9132,7 @@ void ByteCompiler::collectFunctionDeclarations(
   case ast::NodeType::OffModeStatement: {
     const auto &off_mode = static_cast<const ast::OffModeStatement &>(statement);
     if (off_mode.body) {
-      collectFunctionDeclarations(*off_mode.body, out);
+      collectFunctionDeclarations(*off_mode.body, out, parent);
     }
     break;
   }
@@ -8846,7 +9141,7 @@ void ByteCompiler::collectFunctionDeclarations(
     const auto &with_stmt = static_cast<const ast::WithStatement &>(statement);
     for (const auto &s : with_stmt.body) {
       if (s)
-        collectFunctionDeclarations(*s, out);
+        collectFunctionDeclarations(*s, out, parent);
     }
     break;
   }

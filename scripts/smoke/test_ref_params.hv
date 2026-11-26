@@ -1,0 +1,138 @@
+// Regression: C#-style by-reference parameters (`ref`).
+//
+// What: `fn f(ref x)` declares a by-reference parameter; the call site
+//       passes `f(ref a)`. Inside f, reads and writes of x operate on the
+//       caller's variable: `x = 9` is visible in the caller after the call.
+//       Marker and declaration must agree in both directions - a missing
+//       marker, a marker on a by-value parameter, and `ref 5` are all
+//       compile errors, as in C#. A ref argument naming a ref parameter of
+//       the enclosing function is a pass-through reference; a closure
+//       capturing a ref parameter writes through to the same box.
+//
+// Why this design: an earlier attempt implemented `ref` as a reactive-box
+//       declaration keyword instead; the language needs the C# parameter
+//       form. The box transport is an implementation detail - scripts use
+//       `f(ref a)` and see aliasing.
+//
+// Expected: PASS, exit 0. No OS input, no fs writes outside the scratch
+// temp dir, no processes besides this script's own error-case runs.
+
+use "fs"
+use "process"
+use "sys"
+use "time"
+
+failures = 0
+fn check(name, cond) {
+    if cond {
+        print("PASS " + name)
+    } else {
+        print("FAIL " + name)
+        failures = failures + 1
+    }
+}
+
+HAVEL = sys.env("HAVEL_BINARY")
+if HAVEL == null || HAVEL == "" {
+    HAVEL = sys.cwd() + "/build-debug/havel"
+}
+if !fs.isFile(HAVEL) {
+    print("SKIP ref_params: no havel binary beside HAVEL_BINARY/cwd")
+    process.exit(0)
+}
+
+// ------------------------------------------------------------ local aliasing
+fn add10(ref x) {
+    x = x + 10
+}
+
+a = 5
+add10(ref a)
+check("callee mutation lands in the caller's local", a == 15)
+
+// ------------------------------------------------------------ global aliasing
+g = 7
+fn add_delta(ref v, delta) {
+    v = v + delta
+}
+add_delta(ref g, 100)
+check("ref of a global writes back", g == 107)
+
+// ------------------------------------------------------------ two ref params
+fn swap(ref p, ref q) {
+    t = p
+    p = q
+    q = t
+}
+x = 1
+y = 2
+swap(ref x, ref y)
+check("two ref params swap in place", x == 2 && y == 1)
+
+// ------------------------------------------------------------ pass-through
+fn inner(ref v) {
+    v = v * 3
+}
+fn outer(ref v) {
+    inner(ref v) // v is already a reference: pass it through
+    v = v + 1
+}
+n = 2
+outer(ref n)
+check("ref pass-through keeps one box", n == 7)
+
+// ------------------------------------------------------------ closures
+fn make_adder(ref cell) {
+    fn bump_cell() {
+        cell = cell + 5
+    }
+    bump_cell()
+}
+c = 1
+make_adder(ref c)
+check("closure writes through a captured ref param", c == 6)
+
+// ------------------------------------------------------------ error cases
+// Each mis-call is a compile error: havel run must fail nonzero and say
+// why. The three cases are C#'s rules: marker required for a ref parameter,
+// marker forbidden for a by-value parameter, and ref of a non-variable.
+tmp = "${sys.tmpdir()}/havel_ref_err_${sys.pid()}"
+fs.mkdirAll(tmp)
+
+fn expect_compile_error(case_name, source, needle) {
+    path = "${tmp}/${case_name}.hv"
+    fs.write(path, source)
+    r = process.run(HAVEL + " run " + path)
+    check("compile error: " + case_name,
+          r.exitCode != 0 && (r.stdout + r.stderr).includes(needle))
+}
+
+expect_compile_error("missing_marker",
+                     "fn setv(ref x) { x = 9 }\nv = 1\nsetv(v)\n",
+                     "is 'ref'")
+expect_compile_error("marker_on_by_value_param",
+                     "fn setv(x) { x = 9 }\nv = 1\nsetv(ref v)\n",
+                     "is not 'ref'")
+expect_compile_error("ref_of_non_variable",
+                     "fn f(ref x) { x = 1 }\nf(ref 5)\n",
+                     "must be a variable")
+
+fs.rmdir(tmp, true)
+
+// ------------------------------------------------------------ legacy ref()
+// The ref() host function and its _val reactivity must be untouched by the
+// parameter feature.
+b = ref(0)
+fired = false
+when b._val > 1 { fired = true }
+b._val = 2
+waited = time.millis() + 2000
+while !fired && time.millis() < waited { sleep(5) }
+check("legacy ref() reactivity intact", fired)
+
+if failures > 0 {
+    print("FAIL ref_params: " + failures + " check(s) failed")
+    process.exit(1)
+}
+print("PASS ref_params")
+process.exit(0)

@@ -12,6 +12,7 @@
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
+#include <set>
 #include <vector>
 
 // Qt defines 'emit' as a macro - we need to undefine it for our method name
@@ -24,7 +25,7 @@ namespace havel::compiler {
 // Exception that carries source location through stack unwind
 struct CompilerError : std::runtime_error {
   uint32_t line = 0, column = 0;
-  CompilerError(const std::string& msg, uint32_t l = 0, uint32_t c = 0)
+  CompilerError(const std::string &msg, uint32_t l = 0, uint32_t c = 0)
       : std::runtime_error(msg), line(l), column(c) {}
 };
 
@@ -35,13 +36,11 @@ class VM;
 class ByteCompiler : public BytecodeCompiler {
 public:
   std::unique_ptr<BytecodeChunk> compile(const ast::Program &program) override;
-  std::unique_ptr<BytecodeChunk>
-  compileWithModuleLoader(const ast::Program &program, ModuleLoader &loader,
-	const std::filesystem::path &basePath);
-	// Pre-populate known global names (for REPL persistence across compiles)
-  void setKnownGlobals(const std::unordered_set<std::string> &names) {
-    known_globals_ = names;
-  }
+  std::unique_ptr<BytecodeChunk> compileWithModuleLoader(const ast::Program &program,
+                                                         ModuleLoader &loader,
+                                                         const std::filesystem::path &basePath);
+  // Pre-populate known global names (for REPL persistence across compiles)
+  void setKnownGlobals(const std::unordered_set<std::string> &names) { known_globals_ = names; }
   void setKnownClassNames(const std::unordered_set<std::string> &names) {
     known_class_names_ = names;
   }
@@ -63,18 +62,10 @@ public:
   const std::unordered_set<std::string> &topLevelProtocolNames() const {
     return top_level_protocol_names_;
   }
-  const std::unordered_set<std::string> &topLevelImplNames() const {
-    return top_level_impl_names_;
-  }
-    void setTypeCheckResult(TypeCheckResult result) {
-        type_check_result_ = std::move(result);
-    }
-    const TypeCheckResult &typeCheckResult() const {
-        return type_check_result_;
-    }
-  const LexicalResolutionResult &lexicalResolution() const {
-    return lexical_resolution_;
-  }
+  const std::unordered_set<std::string> &topLevelImplNames() const { return top_level_impl_names_; }
+  void setTypeCheckResult(TypeCheckResult result) { type_check_result_ = std::move(result); }
+  const TypeCheckResult &typeCheckResult() const { return type_check_result_; }
+  const LexicalResolutionResult &lexicalResolution() const { return lexical_resolution_; }
   // Extract current chunk even if compilation failed (for debugging)
   std::unique_ptr<BytecodeChunk> takeCurrentChunk() {
     if (current_function) {
@@ -98,8 +89,8 @@ public:
   const std::vector<CompilerError> &errors() const { return errors_; }
   void setCollectErrors(bool collect) { collect_errors_ = collect; }
 
-  void setSourceFile(const std::string& f) { source_file_ = f; }
-  const std::string& sourceFile() const { return source_file_; }
+  void setSourceFile(const std::string &f) { source_file_ = f; }
+  const std::string &sourceFile() const { return source_file_; }
 
   // Strict mode: treat unresolved global identifiers as errors
   void setStrictMode(bool strict) { strict_mode_ = strict; }
@@ -113,7 +104,7 @@ public:
     return current_source_location_ ? current_source_location_->column : 0;
   }
 
-// String constant addition (public for compile-time constant folding)
+  // String constant addition (public for compile-time constant folding)
   uint32_t addStringConstant(const std::string &str) const;
 
 private:
@@ -123,27 +114,26 @@ private:
     std::optional<SourceLocation> previous;
     SourceLocationScope(ByteCompiler *owner, const ast::ASTNode &node)
         : compiler(owner), previous(owner->current_source_location_) {
-        if (node.line > 0) {
-            owner->current_source_location_ = SourceLocation{
-                owner->source_file_, static_cast<uint32_t>(node.line), static_cast<uint32_t>(node.column), static_cast<uint32_t>(node.length)};
-        }
+      if (node.line > 0) {
+        owner->current_source_location_ =
+            SourceLocation{owner->source_file_, static_cast<uint32_t>(node.line),
+                           static_cast<uint32_t>(node.column), static_cast<uint32_t>(node.length)};
+      }
     }
     ~SourceLocationScope() { compiler->current_source_location_ = previous; }
   };
 
-  SourceLocationScope atNode(const ast::ASTNode &node) {
-    return SourceLocationScope(this, node);
-  }
+  SourceLocationScope atNode(const ast::ASTNode &node) { return SourceLocationScope(this, node); }
 
-void emit(OpCode op);
-void emit(OpCode op, Value operand);
+  void emit(OpCode op);
+  void emit(OpCode op, Value operand);
   void emit(OpCode op, std::vector<Value> operands);
   uint32_t addConstant(const Value &value);
   uint32_t addStringConstant(const std::string &str);
   uint32_t emitJump(OpCode op);
   void patchJump(uint32_t jump_instruction_index, uint32_t target);
 
-void optimizeJumps();  // Jump threading optimization
+  void optimizeJumps(); // Jump threading optimization
 
   void compileFunction(const ast::FunctionDeclaration &function);
   void compileLambda(const ast::LambdaExpression &lambda);
@@ -162,44 +152,36 @@ void optimizeJumps();  // Jump threading optimization
   bool bareMemberResolves(const std::string &name) const;
   // True when a bare class member (ClassMember binding) can reach `self`.
   bool memberSelfAvailable() const;
-  void compileClassMethod(const std::string &class_name,
-  const ast::ClassMethodDef &method,
-  const std::vector<ast::ClassFieldDef> &fields,
-  const std::string &parent_class_name,
-  const std::unordered_set<std::string> &method_names);
-	void compileStructMethod(const std::string &struct_name,
-		const ast::StructMethodDef &method,
-		const std::vector<ast::StructFieldDef> &fields);
-	void compileDefaultMethodBody(const std::string &type_name,
-		const std::string &method_name,
-		const ast::TraitMethod &traitMethod);
-	void emitDefaultMethodInjections(const std::string &type_name, bool is_struct);
-  void compileParameterPattern(const ast::Expression &pattern,
-                               uint32_t paramIndex);
+  void compileClassMethod(const std::string &class_name, const ast::ClassMethodDef &method,
+                          const std::vector<ast::ClassFieldDef> &fields,
+                          const std::string &parent_class_name,
+                          const std::unordered_set<std::string> &method_names);
+  void compileStructMethod(const std::string &struct_name, const ast::StructMethodDef &method,
+                           const std::vector<ast::StructFieldDef> &fields);
+  void compileDefaultMethodBody(const std::string &type_name, const std::string &method_name,
+                                const ast::TraitMethod &traitMethod);
+  void emitDefaultMethodInjections(const std::string &type_name, bool is_struct);
+  void compileParameterPattern(const ast::Expression &pattern, uint32_t paramIndex);
   void compileParameterPatternValue(const ast::Expression &pattern);
   void collectParameterPatternSlots(const ast::Expression &pattern);
-  void collectFunctionDeclarations(
-      const ast::Statement &statement,
-      std::vector<const ast::FunctionDeclaration *> &out) const;
-  void collectLambdaExpressions(
-      const ast::Statement &statement,
-      std::vector<const ast::LambdaExpression *> &out) const;
+  void collectFunctionDeclarations(const ast::Statement &statement,
+                                   std::vector<const ast::FunctionDeclaration *> &out,
+                                   const ast::FunctionDeclaration *parent = nullptr);
+  void collectLambdaExpressions(const ast::Statement &statement,
+                                std::vector<const ast::LambdaExpression *> &out) const;
   // Collect `on <event> { ... }` statements (top-level + nested) for
   // handler-fn index reservation and compilation. Also descends into
   // assignments to catch `w = on ... { ... }` (OnEventExpression).
-  void collectOnEventStatements(
-      const ast::Statement &statement,
-      std::vector<const ast::OnEventStatement *> &out) const;
-  void collectOnEventExpressions(
-      const ast::Statement &statement,
-      std::vector<const ast::OnEventExpression *> &out) const;
-  void collectLambdaExpressions(
-      const ast::Expression &expression,
-      std::vector<const ast::LambdaExpression *> &out) const;
+  void collectOnEventStatements(const ast::Statement &statement,
+                                std::vector<const ast::OnEventStatement *> &out) const;
+  void collectOnEventExpressions(const ast::Statement &statement,
+                                 std::vector<const ast::OnEventExpression *> &out) const;
+  void collectLambdaExpressions(const ast::Expression &expression,
+                                std::vector<const ast::LambdaExpression *> &out) const;
   void compileStatement(const ast::Statement &statement);
   void compileUseStatement(const ast::UseStatement &statement);
   void compileExternBlock(const ast::ExternBlock &statement);
-    void compileWithStatement(const ast::WithStatement &statement);
+  void compileWithStatement(const ast::WithStatement &statement);
   void compileDecoratorStatement(const ast::DecoratorStatement &statement);
   void compileExpression(const ast::Expression &expression);
   void compilePattern(const ast::Expression &pattern, uint32_t discSlot);
@@ -213,12 +195,20 @@ void optimizeJumps();  // Jump threading optimization
   void compileTryStatement(const ast::TryExpression &statement);
   void compileCallExpression(const ast::CallExpression &expression);
   void compileCallExpressionTail(const ast::CallExpression &expression); // TCO
+  // C#-style ref calls: any argument marked `f(ref x)` takes this path so
+  // the box/write-back code never has to be threaded through every ordinary
+  // call path.
+  void compileRefCallExpression(const ast::CallExpression &expression);
+  // Ref parameter access: the slot holds a {_val: value} box; reads/writes of
+  // the name compile to OBJECT_GET/OBJECT_SET on it.
+  void emitRefParamLoad(const ResolvedBinding &binding);
+  void emitRefParamStore(const ResolvedBinding &binding, bool returns_value);
   void compileThreadExpression(const ast::ThreadExpression &expression);
   void compileIntervalExpression(const ast::IntervalExpression &expression);
   void compileUpdateBlockExpression(const ast::UpdateBlockExpression &expression);
   void compileTimeoutExpression(const ast::TimeoutExpression &expression);
   void compileYieldExpression(const ast::YieldExpression &expression);
- void compileAwaitExpression(const ast::AwaitExpression &expression);
+  void compileAwaitExpression(const ast::AwaitExpression &expression);
   void compileGoStatement(const ast::GoStatement &statement);
   void compileGoExpression(const ast::GoExpression &expression);
   void compileDelTarget(const ast::Expression &target);
@@ -237,23 +227,24 @@ void optimizeJumps();  // Jump threading optimization
   // Type inference for fast path optimizations
   std::optional<std::string> getExpressionType(const ast::Expression &expr) const;
   std::optional<OpCode> getFastIntegerOpCode(ast::BinaryOperator op) const;
-// Closure body compilation helpers
-  void compileClosureBody(const ast::Statement &body, const std::string &name, std::optional<uint32_t> capturedIntervalIdSlot = std::nullopt, const std::vector<UpvalueDescriptor> *precomputedUpvalues = nullptr);
-  void collectUpvaluesFromBody(const ast::Statement &stmt, std::vector<UpvalueDescriptor> &upvalues);
-void collectUpvaluesFromExpr(const ast::Expression &expr, std::vector<UpvalueDescriptor> &upvalues);
-std::optional<std::string> getCalleeName(const ast::Expression &callee) const;
-std::optional<std::string>
-normalizeTypeAnnotation(const ast::TypeAnnotation *annotation) const;
-std::optional<std::string> normalizeTypeName(const std::string &name) const;
-uint64_t typeHintFromAnnotation(const ast::TypeAnnotation *annotation) const;
-void setTypeFeedbackHint(uint32_t ip, uint64_t type_mask);
-void emitTypeAssertionForLocal(const std::string &normalized_expected,
-    uint32_t slot,
-    const std::string &label);
-void emitNullableTypeAssertionForLocal(const std::string &inner_type,
-    uint32_t slot,
-    const std::string &label);
-const ResolvedBinding *bindingFor(const ast::Identifier &id) const;
+  // Closure body compilation helpers
+  void compileClosureBody(const ast::Statement &body, const std::string &name,
+                          std::optional<uint32_t> capturedIntervalIdSlot = std::nullopt,
+                          const std::vector<UpvalueDescriptor> *precomputedUpvalues = nullptr);
+  void collectUpvaluesFromBody(const ast::Statement &stmt,
+                               std::vector<UpvalueDescriptor> &upvalues);
+  void collectUpvaluesFromExpr(const ast::Expression &expr,
+                               std::vector<UpvalueDescriptor> &upvalues);
+  std::optional<std::string> getCalleeName(const ast::Expression &callee) const;
+  std::optional<std::string> normalizeTypeAnnotation(const ast::TypeAnnotation *annotation) const;
+  std::optional<std::string> normalizeTypeName(const std::string &name) const;
+  uint64_t typeHintFromAnnotation(const ast::TypeAnnotation *annotation) const;
+  void setTypeFeedbackHint(uint32_t ip, uint64_t type_mask);
+  void emitTypeAssertionForLocal(const std::string &normalized_expected, uint32_t slot,
+                                 const std::string &label);
+  void emitNullableTypeAssertionForLocal(const std::string &inner_type, uint32_t slot,
+                                         const std::string &label);
+  const ResolvedBinding *bindingFor(const ast::Identifier &id) const;
   // WithMember: try each candidate owner (nearest first) with a runtime
   // OBJECT_GET; first non-null member value wins. Leaves the value on the
   // stack.
@@ -265,8 +256,7 @@ const ResolvedBinding *bindingFor(const ast::Identifier &id) const;
   // Returns std::nullopt if the expression cannot be evaluated at compile time.
   std::optional<Value> tryEvaluateConstant(const ast::Expression &expr) const;
 
-  void enterFunction(BytecodeFunction &&function,
-                     std::optional<uint32_t> slot = std::nullopt);
+  void enterFunction(BytecodeFunction &&function, std::optional<uint32_t> slot = std::nullopt);
   void leaveFunction();
   void resetLocals();
 
@@ -281,20 +271,17 @@ const ResolvedBinding *bindingFor(const ast::Identifier &id) const;
   std::unique_ptr<BytecodeFunction> current_function;
   std::vector<std::unique_ptr<BytecodeFunction>> compiled_functions;
   // Stack for saving function contexts during nested function compilation
-  std::vector<
-      std::pair<std::unique_ptr<BytecodeFunction>, std::optional<uint32_t>>>
+  std::vector<std::pair<std::unique_ptr<BytecodeFunction>, std::optional<uint32_t>>>
       saved_functions_;
   std::vector<uint32_t> saved_next_local_index_;
-  std::unordered_map<const ast::FunctionDeclaration *, uint32_t>
-      function_indices_by_node_;
+  std::unordered_map<const ast::FunctionDeclaration *, uint32_t> function_indices_by_node_;
   // `on start { }` / `on reload { }` lifecycle blocks compile as chunk-level
   // functions named __on_start__ / __on_reload__; the engine calls
   // __on_start__ once before the entry function.
   std::unordered_map<const ast::ASTNode *, uint32_t> on_block_indices_by_node_;
   // `on <event> { ... }` handler functions: the body compiles as a function
   // taking one `event` parameter; REGISTER_EVENT calls event.subscribe.
-  std::unordered_map<const ast::ASTNode *, uint32_t>
-      on_event_indices_by_node_;
+  std::unordered_map<const ast::ASTNode *, uint32_t> on_event_indices_by_node_;
   // Lifecycle blocks (`on start { }` / `on reload { }`). Despite the similar
   // name this is unrelated to compileWhenBlock; the index map is keyed by
   // ASTNode*, so it takes the base Statement and dispatches on kind.
@@ -303,23 +290,31 @@ const ResolvedBinding *bindingFor(const ast::Identifier &id) const;
   void compileImportStatement(const ast::ImportStatement &statement);
   void compileOnEventExpression(const ast::OnEventExpression &stmt);
   void compileOnEventExprRegistration(const ast::OnEventExpression &stmt);
-  std::unordered_map<const ast::ClassMethodDef *, uint32_t>
-  class_method_indices_by_node_;
-	std::unordered_map<const ast::StructMethodDef *, uint32_t>
-		struct_method_indices_by_node_;
-	std::unordered_map<const ast::TraitMethod *, uint32_t>
-		trait_method_indices_by_node_;
-  std::unordered_map<const ast::LambdaExpression *, uint32_t>
-      lambda_indices_by_node_;
+  std::unordered_map<const ast::ClassMethodDef *, uint32_t> class_method_indices_by_node_;
+  std::unordered_map<const ast::StructMethodDef *, uint32_t> struct_method_indices_by_node_;
+  std::unordered_map<const ast::TraitMethod *, uint32_t> trait_method_indices_by_node_;
+  std::unordered_map<const ast::LambdaExpression *, uint32_t> lambda_indices_by_node_;
   std::optional<uint32_t> current_function_slot_;
+  // C#-style by-reference parameters: for every top-level function name,
+  // which parameter positions were declared `ref`. Filled in the pre-pass
+  // (before bodies compile) so calls verify against the callee signature.
+  std::unordered_map<std::string, std::vector<bool>> ref_signatures_;
+  // Enclosing function per declared function, so a nested function inherits
+  // its ancestors' ref parameter names (all functions compile in one flat
+  // loop; the enclosing compile's dynamic scope is already torn down).
+  std::unordered_map<const ast::FunctionDeclaration *, const ast::FunctionDeclaration *> fn_parent_;
+  // Names of the current function's `ref` parameters (plus those of the
+  // enclosing functions, so closures capturing a ref parameter compile to
+  // box access). Saved/restored around each compileFunction.
+  std::set<std::string> ref_param_names_;
   std::unordered_map<std::string, uint32_t> top_level_function_indices_by_name_;
   std::unordered_set<std::string> top_level_struct_names_;
   std::unordered_set<std::string> top_level_class_names_;
   std::unordered_set<std::string> top_level_protocol_names_;
   std::unordered_set<std::string> top_level_impl_names_;
   std::unordered_set<std::string> decorated_function_names_;
-    std::unordered_set<const ast::FunctionDeclaration *> impl_method_nodes_;
-std::unordered_map<const ast::FunctionDeclaration *, std::string> impl_method_type_names_;
+  std::unordered_set<const ast::FunctionDeclaration *> impl_method_nodes_;
+  std::unordered_map<const ast::FunctionDeclaration *, std::string> impl_method_type_names_;
   uint32_t next_local_index = 0;
   std::optional<SourceLocation> current_source_location_;
   LexicalResolutionResult lexical_resolution_;
@@ -329,7 +324,7 @@ std::unordered_map<const ast::FunctionDeclaration *, std::string> impl_method_ty
   // arity), used to reject wrong-arity extern calls at compile time.
   std::unordered_map<std::string, size_t> extern_arities_;
 
-	// Pre-known globals (from previous REPL sessions)
+  // Pre-known globals (from previous REPL sessions)
   std::unordered_set<std::string> known_globals_;
   std::unordered_set<std::string> known_class_names_;
   std::unordered_set<std::string> known_struct_names_;
@@ -368,18 +363,17 @@ std::unordered_map<const ast::FunctionDeclaration *, std::string> impl_method_ty
   };
   std::unordered_map<std::string, ClassMemberNames> class_members_by_name_;
 
+  // Tail call optimization state
+  bool in_tail_position_ = false;
+  bool emitted_tail_call_ = false;
+  int try_depth_ = 0; // >0 when inside a try block (suppress TAIL_CALL)
 
-    // Tail call optimization state
-    bool in_tail_position_ = false;
-    bool emitted_tail_call_ = false;
-    int try_depth_ = 0; // >0 when inside a try block (suppress TAIL_CALL)
-
-    struct LoopInfo {
-        uint32_t loop_start;
-        std::vector<uint32_t> break_jumps;
-        std::vector<uint32_t> continue_jumps;
-    };
-    std::vector<LoopInfo> loop_stack_;
+  struct LoopInfo {
+    uint32_t loop_start;
+    std::vector<uint32_t> break_jumps;
+    std::vector<uint32_t> continue_jumps;
+  };
+  std::vector<LoopInfo> loop_stack_;
 
   // Condition function index for hotkey.register_conditional.
   // Set by compileWhenBlock (when expr { ^v => {} }) before compileHotkeyBinding
@@ -389,14 +383,14 @@ std::unordered_map<const ast::FunctionDeclaration *, std::string> impl_method_ty
   // HostBridge for lazy module loading and permission checks
   HostBridge *host_bridge_ = nullptr;
 
-    // Error collection for linting
-    bool collect_errors_ = false;
-    bool has_error_ = false;
-    std::vector<CompilerError> errors_;
+  // Error collection for linting
+  bool collect_errors_ = false;
+  bool has_error_ = false;
+  std::vector<CompilerError> errors_;
 
-    TypeCheckResult type_check_result_;
+  TypeCheckResult type_check_result_;
 
-    std::string source_file_;
+  std::string source_file_;
 };
 
 } // namespace havel::compiler

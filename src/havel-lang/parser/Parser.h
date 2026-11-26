@@ -10,7 +10,6 @@
 #include <memory>
 #include <stdexcept>
 #include <vector>
-#include <set>
 #include <string>
 #include <sstream>
 
@@ -191,11 +190,6 @@ class Parser {
 private:
   std::vector<Token> tokens;
 
-  // Names declared with the `ref` keyword. Every later use of the name
-  // compiles as `name._val`, which makes `ref x = 0; when x > 5` re-fire on
-  // assignment. Scoped to the whole parse: a ref must be declared before its
-  // first use, and shadowing a ref name is not supported.
-  std::set<std::string> refNames_;
   size_t position = 0;
 
   // Safety guards
@@ -310,10 +304,6 @@ private:
 
   // Parser methods (following Tyler's structure)
   std::unique_ptr<ast::Statement> parseStatement();
-
-  // `ref name = value`: declare a reactive box. Sugar for
-  // `name = ref(value)` plus transparent `_val` access on later uses.
-  std::unique_ptr<ast::Statement> parseRefDeclaration();
   std::unique_ptr<ast::Statement>
   parseInlineStatement(); // For inline forms (doesn't skip newlines)
   std::unique_ptr<ast::Expression> parseExpression();

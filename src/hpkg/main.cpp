@@ -552,7 +552,8 @@ static int run_capture(const std::string &cmd, std::string *out) {
   // streams its log, instead of both being swallowed.
   if (!out) {
     int rc = std::system(cmd.c_str());
-    if (rc == -1) return -1;
+    if (rc == -1)
+      return -1;
     return WIFEXITED(rc) ? WEXITSTATUS(rc) : 1;
   }
   std::string full = cmd + " 2>&1";
@@ -669,16 +670,18 @@ static void copy_runtime_libs(const fs::path &bin, const fs::path &source_dir) {
   std::error_code ec;
   while (std::getline(lines, line)) {
     auto arrow = line.find("=> not found");
-    if (arrow == std::string::npos) continue;
+    if (arrow == std::string::npos)
+      continue;
     std::string name = trim(line.substr(0, arrow));
-    if (name.empty()) continue;
+    if (name.empty())
+      continue;
     // Search the source build dir and its toolkits/ subdir for the library.
     bool copied = false;
     for (const fs::path &dir : {source_dir, source_dir / "toolkits"}) {
       fs::path candidate = dir / name;
       if (fs::exists(candidate)) {
-        fs::copy_file(candidate, bin.parent_path() / name,
-                      fs::copy_options::overwrite_existing, ec);
+        fs::copy_file(candidate, bin.parent_path() / name, fs::copy_options::overwrite_existing,
+                      ec);
         copied = true;
         break;
       }
@@ -686,10 +689,64 @@ static void copy_runtime_libs(const fs::path &bin, const fs::path &source_dir) {
     if (!copied) {
       // Missing at install time = dead toolchain on first run. Say so now
       // instead of leaving the user to decode a loader error later.
-      std::cerr << "hpkg: warning: runtime lib '" << name
-                << "' not found under " << source_dir.string()
-                << " - '" << bin.filename().string() << "' will fail to start"
-                << std::endl;
+      std::cerr << "hpkg: warning: runtime lib '" << name << "' not found under "
+                << source_dir.string() << " - '" << bin.filename().string()
+                << "' will fail to start" << std::endl;
+    }
+  }
+}
+
+// Plugins and toolkit backends are dlopen'd at runtime from directories
+// found exe-relative (<toolchain>/modules, <toolchain>/toolkits), and a
+// plugin's own Havel-owned helper libs (libhavel_*.so, e.g.
+// libhavel_ffi_types.so for the ffi plugin) resolve from the plugin's
+// RUNPATH one level up. ldd on `havel` cannot see any of this: the
+// executable has no Havel-owned DT_NEEDED at all. Copying only the
+// binaries therefore produced a toolchain whose scripts died on the first
+// native module ("libhavel_ffi_types.so: cannot open shared object
+// file"). This copies the whole dlopen payload.
+static void copy_runtime_payload(const fs::path &source_dir, const fs::path &tc_dir) {
+  std::error_code ec;
+  // Native module plugins (havel_mod_*.so), found exe-relative.
+  if (fs::is_directory(source_dir / "modules")) {
+    fs::create_directories(tc_dir / "modules", ec);
+    for (const auto &entry : fs::directory_iterator(source_dir / "modules", ec)) {
+      if (ec)
+        break;
+      if (!entry.is_regular_file())
+        continue;
+      if (entry.path().extension() == ".so") {
+        fs::copy_file(entry.path(), tc_dir / "modules" / entry.path().filename(),
+                      fs::copy_options::overwrite_existing, ec);
+      }
+    }
+  }
+  // Toolkit backends, found exe-relative.
+  if (fs::is_directory(source_dir / "toolkits")) {
+    fs::create_directories(tc_dir / "toolkits", ec);
+    for (const auto &entry : fs::directory_iterator(source_dir / "toolkits", ec)) {
+      if (ec)
+        break;
+      if (!entry.is_regular_file())
+        continue;
+      if (entry.path().extension() == ".so") {
+        fs::copy_file(entry.path(), tc_dir / "toolkits" / entry.path().filename(),
+                      fs::copy_options::overwrite_existing, ec);
+      }
+    }
+  }
+  // Havel-owned helper libraries sit in the build root / <prefix>/lib, one
+  // level above the plugin dir; the plugin RUNPATH ($ORIGIN/..) finds them
+  // there. ldd cannot derive this set (see above), so it is every
+  // libhavel*.so the build produced - .a static archives are not runtime.
+  for (const auto &entry : fs::directory_iterator(source_dir, ec)) {
+    if (ec)
+      break;
+    if (!entry.is_regular_file())
+      continue;
+    std::string fname = entry.path().filename().string();
+    if (fname.rfind("libhavel", 0) == 0 && entry.path().extension() == ".so") {
+      fs::copy_file(entry.path(), tc_dir / fname, fs::copy_options::overwrite_existing, ec);
     }
   }
 }
@@ -736,7 +793,7 @@ static std::string selected_toolchain() {
 static int cmd_toolchain(const std::vector<std::string> &args) {
   if (args.empty()) {
     std::cerr << "hpkg toolchain: specify a subcommand "
-                              "(install, list, use, current, remove, run, which, tags, regress)"
+                 "(install, list, use, current, remove, run, which, tags, regress)"
               << std::endl;
     return 1;
   }
@@ -829,8 +886,8 @@ static int cmd_toolchain(const std::vector<std::string> &args) {
       }
       // Runtime .so files must land next to the binary ($ORIGIN) or the
       // toolchain cannot start.
-      copy_runtime_libs(dir / "havel",
-                        fs::is_directory(src) ? src : src.parent_path());
+      copy_runtime_libs(dir / "havel", fs::is_directory(src) ? src : src.parent_path());
+      copy_runtime_payload(fs::is_directory(src) ? src : src.parent_path(), dir);
       tc.mode = "copied";
       tc.origin = from;
     } else {
@@ -887,6 +944,7 @@ static int cmd_toolchain(const std::vector<std::string> &args) {
         }
       }
       copy_runtime_libs(dir / "havel", wt / "build-debug");
+      copy_runtime_payload(wt / "build-debug", dir);
       tc.mode = "built";
       tc.origin = repo.string();
       run_capture("git -C '" + repo.string() + "' worktree remove --force '" + wt.string() + "'",
@@ -912,6 +970,12 @@ static int cmd_toolchain(const std::vector<std::string> &args) {
       return 0;
     }
     std::string def = selected_toolchain();
+    // Surface the env override before the list: a default chosen from the
+    // environment is indistinguishable from the default file otherwise.
+    if (const char *env = std::getenv("HAVEL_TOOLCHAIN"); env && trim(env)[0] != '\0') {
+      std::cout << "note: HAVEL_TOOLCHAIN=" << trim(env) << " overrides ~/.havel/toolchains/default"
+                << std::endl;
+    }
     bool found = false;
     std::vector<Toolchain> tcs;
     for (const auto &entry : fs::directory_iterator(root)) {
@@ -986,6 +1050,14 @@ static int cmd_toolchain(const std::vector<std::string> &args) {
     }
     f << commit << "\n";
     std::cout << "default toolchain set to " << commit.substr(0, 12) << std::endl;
+    // The default file is only consulted when HAVEL_TOOLCHAIN is unset;
+    // a stale env value makes every later `list`/`run` ignore what was
+    // just written, which reads exactly like "use did not take effect".
+    if (const char *env = std::getenv("HAVEL_TOOLCHAIN"); env && trim(env)[0] != '\0') {
+      std::cout << "note: HAVEL_TOOLCHAIN=" << trim(env)
+                << " is set and overrides the default file; unset it to use "
+                << commit.substr(0, 12) << std::endl;
+    }
     return 0;
   }
 
@@ -1034,7 +1106,8 @@ static int cmd_toolchain(const std::vector<std::string> &args) {
         return 1;
       }
     }
-    if (repo.empty()) repo = repo_root_from_cwd();
+    if (repo.empty())
+      repo = repo_root_from_cwd();
     if (repo.empty()) {
       std::cerr << "hpkg toolchain tags: not inside a git repository; pass --repo <path>"
                 << std::endl;
@@ -1060,15 +1133,16 @@ static int cmd_toolchain(const std::vector<std::string> &args) {
     std::string line;
     while (std::getline(lines, line)) {
       line = trim(line);
-      if (line.empty()) continue;
+      if (line.empty())
+        continue;
       std::istringstream parts(line);
       TagRow row;
-      if (!(parts >> row.name >> row.commit >> row.date)) continue;
+      if (!(parts >> row.name >> row.commit >> row.date))
+        continue;
       // An annotated tag object name is not the commit it points at; peel it.
       if (row.commit.size() == 40) {
         std::string peeled;
-        if (run_capture("git -C '" + repo.string() + "' rev-parse '" + row.commit +
-                            "^{commit}'",
+        if (run_capture("git -C '" + repo.string() + "' rev-parse '" + row.commit + "^{commit}'",
                         &peeled) == 0) {
           row.commit = trim(peeled);
         }
@@ -1078,16 +1152,19 @@ static int cmd_toolchain(const std::vector<std::string> &args) {
     // git lists tags lexicographically, so v0.10 would sort before v0.9. Sort
     // by date descending, falling back to name for tags sharing a date.
     std::sort(rows.begin(), rows.end(), [](const TagRow &a, const TagRow &b) {
-      if (a.date != b.date) return a.date > b.date;
+      if (a.date != b.date)
+        return a.date > b.date;
       return a.name < b.name;
     });
 
     fs::path root = get_toolchains_dir();
     size_t shown = 0;
     for (const auto &row : rows) {
-      if (limit > 0 && shown >= (size_t)limit) break;
+      if (limit > 0 && shown >= (size_t)limit)
+        break;
       std::cout << row.name;
-      if (row.commit.size() >= 12) std::cout << "  " << row.commit.substr(0, 12);
+      if (row.commit.size() >= 12)
+        std::cout << "  " << row.commit.substr(0, 12);
       std::cout << "  " << (row.date.empty() ? "unknown-date" : row.date);
       if (fs::is_directory(root / row.commit)) {
         std::cout << "  [installed]";
@@ -1128,8 +1205,7 @@ static int cmd_toolchain(const std::vector<std::string> &args) {
   if (sub == "run") {
     if (rest.empty()) {
       std::cerr << "hpkg toolchain run: specify a ref or a command "
-                << "(with no ref, the current toolchain runs the args)"
-                << std::endl;
+                << "(with no ref, the current toolchain runs the args)" << std::endl;
       return 1;
     }
     fs::path root = get_toolchains_dir();
@@ -1145,8 +1221,7 @@ static int cmd_toolchain(const std::vector<std::string> &args) {
       arg_start = 0;
       if (commit.empty()) {
         std::cerr << "hpkg toolchain run: '" << rest[0]
-                  << "' is not an installed toolchain and no default is set"
-                  << std::endl;
+                  << "' is not an installed toolchain and no default is set" << std::endl;
         return 1;
       }
     }
@@ -1231,23 +1306,23 @@ static void print_usage(const char *prog) {
                "  info [name]          show package info (current dir or named package)\n"
                "  publish [--local]    validate package (and optionally install locally)\n"
                "  remove <name>        remove an installed package\n"
-        "\n"
-        "toolchains (per-commit binaries for regression testing):\n"
-        "  toolchain install <ref> [--from <path>] [--repo <path>] [--jobs N]\n"
-        "                       register a havel binary for a commit/tag; builds from\n"
-        "                       a git worktree unless --from points at a prebuilt one\n"
-        "  toolchain list       list installed toolchains (\* = selected)\n"
-        "  toolchain use <ref>  set the default toolchain\n"
-        "  toolchain current    print the selected toolchain\n"
-        "  toolchain remove <ref>  uninstall a toolchain\n"
-        "  toolchain which <ref>   print the binary path for a toolchain\n"
-        "  toolchain tags [--repo <path>] [--limit N]\n"
-        "                       list the repo's tags with the commit each points at\n"
-        "  toolchain run <ref> <args...>  run that toolchain's havel\n"
-        "  toolchain regress <ref...> -- <cmd...>  run <cmd> under each toolchain\n"
-        "\n"
-        "  toolchains live in ~/.havel/toolchains/<commit>/\n"
-        "  selection: HAVEL_TOOLCHAIN env var overrides ~/.havel/toolchains/default\n"
+               "\n"
+               "toolchains (per-commit binaries for regression testing):\n"
+               "  toolchain install <ref> [--from <path>] [--repo <path>] [--jobs N]\n"
+               "                       register a havel binary for a commit/tag; builds from\n"
+               "                       a git worktree unless --from points at a prebuilt one\n"
+               "  toolchain list       list installed toolchains (\* = selected)\n"
+               "  toolchain use <ref>  set the default toolchain\n"
+               "  toolchain current    print the selected toolchain\n"
+               "  toolchain remove <ref>  uninstall a toolchain\n"
+               "  toolchain which <ref>   print the binary path for a toolchain\n"
+               "  toolchain tags [--repo <path>] [--limit N]\n"
+               "                       list the repo's tags with the commit each points at\n"
+               "  toolchain run <ref> <args...>  run that toolchain's havel\n"
+               "  toolchain regress <ref...> -- <cmd...>  run <cmd> under each toolchain\n"
+               "\n"
+               "  toolchains live in ~/.havel/toolchains/<commit>/\n"
+               "  selection: HAVEL_TOOLCHAIN env var overrides ~/.havel/toolchains/default\n"
                "\n"
                "package layout:\n"
                " my-pkg/\n"

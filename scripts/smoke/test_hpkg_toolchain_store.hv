@@ -12,8 +12,10 @@
 // store so a developer's real ~/.havel/toolchains is never touched.
 //
 // Expected: PASS, exit 0. Fails if any subcommand regresses, if a copied
-// binary cannot start (missing runtime .so beside it), or if selection
-// precedence between HAVEL_TOOLCHAIN and the default file breaks.
+// binary cannot start (missing runtime .so beside it), if the install
+// omits the dlopen payload (module plugins, helper libs) so a
+// native-module script cannot run directly, or if selection precedence
+// between HAVEL_TOOLCHAIN and the default file breaks.
 //
 // The timeout is 600 s, not the 180 s it used to be.
 //
@@ -117,6 +119,38 @@ if BUILD_DIR == "" {
     process.exit(0)
 }
 
+// The repository the toolchain commands operate on. hvtest runs scripts
+// with its own cwd, which is the BUILD directory whenever the suite runs
+// from a build dir (chrooted setups, `./build-debug/hvtest` from the
+// build dir) - neither a bare `git rev-parse` nor hpkg's
+// repo_root_from_cwd finds the repository from there. The build tree
+// records the source directory it was configured from in its
+// CMakeCache.txt; fall back to git's own toplevel (an in-tree run), and
+// skip rather than fail when neither identifies a repository.
+REPO = ""
+tag = "CMAKE_HOME_DIRECTORY:INTERNAL="
+for cache in [bindir + "/CMakeCache.txt", BUILD_DIR + "/CMakeCache.txt",
+              sys.cwd() + "/build-debug/CMakeCache.txt",
+              sys.cwd() + "/CMakeCache.txt"] {
+    if REPO != "" { continue }
+    if !fs.exists(cache) { continue }
+    for line in fs.read(cache).split("\n") {
+        if line.startsWith(tag) { REPO = line[#tag:] }
+    }
+}
+if REPO == "" {
+    r = process.run("git rev-parse --show-toplevel")
+    if r.exitCode == 0 { REPO = r.stdout.trim() }
+}
+if REPO == "" {
+    print("SKIP toolchain_store: no repository to install toolchains from")
+    process.exit(0)
+}
+if process.run("git -C '" + REPO + "' rev-parse HEAD").exitCode != 0 {
+    print("SKIP toolchain_store: " + REPO + " is not a git repository")
+    process.exit(0)
+}
+
 STORE = "${sys.tmpdir()}/havel_tc_store_${sys.pid()}"
 // process.run execs directly (no shell), so the env assignment goes
 // through env(1) rather than a VAR=value prefix.
@@ -127,17 +161,36 @@ r = process.run(env_prefix + " " + HPKG + " toolchain list")
 check("list on an empty store succeeds", r.exitCode == 0 && r.stdout.includes("no toolchains installed"))
 
 // --- install the current commit, plus an older one, via --from.
-head = process.run("git rev-parse HEAD").stdout.trim()
+head = process.run("git -C '" + REPO + "' rev-parse HEAD").stdout.trim()
 check("HEAD is resolvable in this repo", head != "" && #head >= 40)
 
-r = process.run(env_prefix + " " + HPKG + " toolchain install " + head + " --from " + BUILD_DIR)
+r = process.run(env_prefix + " " + HPKG + " toolchain install " + head + " --from " + BUILD_DIR + " --repo " + REPO)
 check("install registers the current commit", r.exitCode == 0 && r.stdout.includes("installed toolchain"))
 
 r = process.run(env_prefix + " " + HPKG + " toolchain list")
 check("list shows the installed commit", r.stdout.includes(head.substr(0, 12)))
 
-r = process.run(env_prefix + " " + HPKG + " toolchain install " + head + " --from " + BUILD_DIR)
+r = process.run(env_prefix + " " + HPKG + " toolchain install " + head + " --from " + BUILD_DIR + " --repo " + REPO)
 check("installing the same commit twice is a no-op", r.stdout.includes("already installed"))
+
+// --- the install must carry the DYLOAD payload, not just the binaries.
+// havel's own DT_NEEDED list is system libs only, so ldd on the copied
+// binary is clean while every native-module script still dies on the
+// first `use "ffi"`: the plugin is dlopen'd from <tc>/modules and its
+// Havel-owned helper (libhavel_ffi_types.so) resolves through the plugin's
+// own RUNPATH $ORIGIN/.. into the toolchain root. ldd cannot see either.
+TC = STORE + "/" + head
+check("install copies module plugins (havel_mod_*.so)", fs.exists(TC + "/modules/havel_mod_ffi.so"))
+check("install copies helper libs next to the binaries", fs.exists(TC + "/libhavel_ffi_types.so"))
+
+// A script using a native module must run through the COPIED binary by
+// DIRECT invocation - no LD_LIBRARY_PATH and no hpkg wrapper - because
+// that is how a developer runs it during regression work.
+FFIFIX = "${sys.tmpdir()}/havel_tc_ffi_${sys.pid()}.hv"
+fs.write(FFIFIX, "use \"ffi\"\nprint(\"FFI_TOOLCHAIN_OK\")\n")
+r = process.run(env_prefix + " " + TC + "/havel run " + FFIFIX)
+check("copied binary runs a native-module script directly",
+      r.exitCode == 0 && r.stdout.includes("FFI_TOOLCHAIN_OK"))
 
 // --- which / use / current
 r = process.run(env_prefix + " " + HPKG + " toolchain which " + head)
@@ -176,13 +229,13 @@ check("regress reports a failing toolchain", r.exitCode == 1 && r.stdout.include
 
 // --- tags: every tag in the repo with the commit it points at, newest first,
 // and an [installed] marker once that commit is in the store.
-r = process.run(env_prefix + " " + HPKG + " toolchain tags --repo .")
+r = process.run(env_prefix + " " + HPKG + " toolchain tags --repo " + REPO)
 check("tags exits 0 on a repository", r.exitCode == 0)
 tagRows = r.stdout.trim().split("\n")
 check("tags lists the repository's tags", #tagRows > 0)
 
 // Every listed name must be a real tag, and the listing must not drop any.
-r = process.run("git tag")
+r = process.run("git -C '" + REPO + "' tag")
 gitTags = r.stdout.trim().split("\n")
 missing = 0
 for t in gitTags {
@@ -201,9 +254,9 @@ check("every git tag appears in the listing", missing == 0)
 // store bookkeeping this exercises (no build, no download).
 if #gitTags > 0 && gitTags[0] != "" {
     someTag = gitTags[0]
-    r = process.run(env_prefix + " " + HPKG + " toolchain install " + someTag + " --from " + BUILD_DIR)
+    r = process.run(env_prefix + " " + HPKG + " toolchain install " + someTag + " --from " + BUILD_DIR + " --repo " + REPO)
     check("a tag resolves and installs", r.exitCode == 0 && r.stdout.includes("installed toolchain"))
-    r = process.run(env_prefix + " " + HPKG + " toolchain tags --repo . --all")
+    r = process.run(env_prefix + " " + HPKG + " toolchain tags --repo " + REPO + " --all")
     check("installed tag is marked in the listing", r.stdout.includes("[installed]"))
 } else {
     print("SKIP installed-tag marker (this checkout has no tags)")
@@ -236,7 +289,7 @@ check("run refuses an uninstalled ref with no default", r.exitCode == 1 && r.std
 r = process.run(env_prefix + " " + HPKG + " toolchain run deadbeefdeadbeef run x.hv")
 check("run falls back to the current toolchain for an uninstalled ref", r.exitCode == 1 && !r.stderr.includes("not an installed toolchain"))
 
-r = process.run(env_prefix + " " + HPKG + " toolchain install nosuchrefatall")
+r = process.run(env_prefix + " " + HPKG + " toolchain install nosuchrefatall --repo " + REPO)
 check("install refuses an unknown ref", r.exitCode == 1 && r.stderr.includes("ref not found"))
 
 r = process.run(env_prefix + " " + HPKG + " toolchain install " + head + " --no-build")

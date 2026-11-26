@@ -3010,6 +3010,19 @@ function(add_havel_module_plugin MODULE_NAME MODULE_SOURCE)
     C_STANDARD_REQUIRED ON
     POSITION_INDEPENDENT_CODE ON
     INTERPROCEDURAL_OPTIMIZATION OFF
+    # Plugins are dlopen'd, and glibc resolves a dlopen'd object's OWN
+    # dependencies from that object's RUNPATH - the executable's RUNPATH
+    # does not propagate to it. havel_mod_ffi needs libhavel_ffi_types.so,
+    # which lives in the build root and in <prefix>/lib, i.e. one and two
+    # levels above the plugin in every layout (build: <build>/modules;
+    # toolchain copy: <tc>/modules; install: <prefix>/lib/havel/modules).
+    # Without this, the plugin loads only where an ld.so cache entry or
+    # LD_LIBRARY_PATH happens to mask the gap (observed: a stale
+    # /usr/lib/libhavel_ffi_types.so from an earlier `build.sh install`
+    # made the build tree look healthy while a copied toolchain failed
+    # with "libhavel_ffi_types.so: cannot open shared object file").
+    BUILD_RPATH "$ORIGIN:$ORIGIN/.."
+    INSTALL_RPATH "$ORIGIN:$ORIGIN/..:$ORIGIN/../.."
   )
   target_compile_options(${MODULE_TARGET} PRIVATE ${HAVEL_NO_LTO_FLAG})
   target_link_options(${MODULE_TARGET} PRIVATE ${HAVEL_NO_LTO_FLAG})

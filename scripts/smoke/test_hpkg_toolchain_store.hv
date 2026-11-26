@@ -152,6 +152,11 @@ if process.run("git -C '" + REPO + "' rev-parse HEAD").exitCode != 0 {
 }
 
 STORE = "${sys.tmpdir()}/havel_tc_store_${sys.pid()}"
+// The store path is pid-based, so a previous run that died before its
+// cleanup leaves a populated store this pid may recycle. Pids are unique
+// among live processes, so clearing this run's own path first is safe and
+// removes the "empty store" checks' dependence on prior-run fate.
+fs.rmdir(STORE, true)
 // process.run execs directly (no shell), so the env assignment goes
 // through env(1) rather than a VAR=value prefix.
 env_prefix = "env HAVEL_TOOLCHAIN_STORE=" + STORE
@@ -210,6 +215,11 @@ FIXTURE = "${sys.tmpdir()}/havel_tc_script_${sys.pid()}.hv"
 fs.write(FIXTURE, "print(\"TOOLCHAIN_RAN\")\n")
 r = process.run(env_prefix + " " + HPKG + " toolchain run " + head + " run " + FIXTURE)
 check("run executes the stored binary", r.exitCode == 0 && r.stdout.includes("TOOLCHAIN_RAN"))
+
+// Flags-only invocation: the first argument is not a ref, so the whole arg
+// list must reach the current toolchain's havel unchanged.
+r = process.run(env_prefix + " " + HPKG + " toolchain run --version")
+check("run passes flags through to the current toolchain", r.exitCode == 0 && r.stdout.includes("havel"))
 
 // The first argument is a ref only if it resolves to an installed
 // toolchain; otherwise the whole arg list runs under the current one. So
@@ -280,6 +290,7 @@ check("tags refuses a non-repository path", r.exitCode == 1 && r.stderr.includes
 // no default either. The check below therefore uses a store with no
 // default selected, which is the case that must still be refused.
 EMPTY_STORE = "${sys.tmpdir()}/havel_tc_empty_${sys.pid()}"
+fs.rmdir(EMPTY_STORE, true)
 r = process.run("env HAVEL_TOOLCHAIN_STORE=" + EMPTY_STORE + " " + HPKG + " toolchain run deadbeefdeadbeef run x.hv")
 check("run refuses an uninstalled ref with no default", r.exitCode == 1 && r.stderr.includes("not an installed toolchain"))
 

@@ -953,6 +953,21 @@ static int cmd_toolchain(const std::vector<std::string> &args) {
     }
 
     write_toolchain_info(dir, tc);
+    // The install is not done until the installed binary starts. Every
+    // "cannot open shared object file" defect in this area reported success
+    // at copy time and failed at first use; running the artifact is the
+    // difference between a tool that verifies and one that lies.
+    {
+      std::string ver;
+      if (run_capture("'" + (dir / "havel").string() + "' --version", &ver) != 0 ||
+          ver.find("havel") == std::string::npos) {
+        std::cerr << "hpkg: installed toolchain binary does not run: " << (dir / "havel").string()
+                  << " - removing it instead of reporting success" << std::endl;
+        std::error_code rmec;
+        fs::remove_all(dir, rmec);
+        return 1;
+      }
+    }
     std::cout << "installed toolchain " << commit.substr(0, 12) << " (" << ref << ")" << std::endl;
     if (tc.date.empty()) {
       std::cout << "date: unknown" << std::endl;
@@ -1049,6 +1064,24 @@ static int cmd_toolchain(const std::vector<std::string> &args) {
       return 1;
     }
     f << commit << "\n";
+    f.close();
+    // Read back what was written: a "success" message that a later `list`
+    // or `current` contradicts was the exact "use does nothing" symptom,
+    // and a write that silently landed in the wrong place is otherwise
+    // invisible until someone runs two commands in a row.
+    std::string saved;
+    {
+      std::ifstream back(root / "default");
+      if (!back.is_open())
+        saved = "<unreadable>";
+      else
+        std::getline(back, saved);
+    }
+    if (trim(saved) != commit) {
+      std::cerr << "hpkg: cannot read default toolchain back (got '" << trim(saved) << "', wrote '"
+                << commit << "')" << std::endl;
+      return 1;
+    }
     std::cout << "default toolchain set to " << commit.substr(0, 12) << std::endl;
     // The default file is only consulted when HAVEL_TOOLCHAIN is unset;
     // a stale env value makes every later `list`/`run` ignore what was

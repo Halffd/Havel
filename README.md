@@ -1,6 +1,8 @@
 
 **Havel** is a powerful utility for managing windows and hotkeys across multiple platforms, with a focus on Linux X11 environments. It allows for complex window management, hotkey configurations, and automated tasks via its own Havel scripting language.
 
+📚 **Documentation**: https://halfd.github.io/Havel/
+
 ## 📋 Table of Contents
 - [Features](#features)
 - [Installation](#installation)

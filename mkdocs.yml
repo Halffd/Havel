@@ -1,8 +1,8 @@
 site_name: Havel Documentation
 site_description: Havel — a systems scripting language for desktop automation, window management, and hotkey-driven workflows.
-site_url: https://havel-lang.org
-repo_url: https://github.com/yourorg/havel-3
-repo_name: havel-3/havel-3
+site_url: https://halfd.github.io/Havel/
+repo_url: https://github.com/Halffd/Havel
+repo_name: Halffed/Havel
 docs_dir: docs
 
 theme:
@@ -97,8 +97,8 @@ nav:
       - Filesystem: stdlib/fs.md
       - Shell: stdlib/shell.md
       - System: stdlib/sys.md
-      - Network: stdlib/network.md
       - Clipboard: stdlib/clipboard.md
+      - Laptop: stdlib/laptop.md
       - Window: stdlib/window.md
       - Brightness: stdlib/brightness.md
       - Hotkey: stdlib/hotkey.md
@@ -134,7 +134,7 @@ nav:
 extra:
   social:
     - icon: fontawesome/brands/github
-      link: https://github.com/yourorg/havel-3
+      link: https://github.com/Halffed/Havel
     - icon: fontawesome/brands/discord
       link: https://discord.gg/havel
   generator: false
@@ -142,10 +142,3 @@ extra:
     provider: mike
 
 copyright: Copyright &copy; 2024 Havel Contributors
-
-# Custom CSS/JS
-extra_css:
-  - stylesheets/extra.css
-
-extra_javascript:
-  - javascripts/extra.js

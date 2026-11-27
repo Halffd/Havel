@@ -3740,6 +3740,33 @@ if(ENABLE_TESTS AND GTest_FOUND)
     )
     add_test(NAME io_x11_state_mask_test COMMAND io_x11_state_mask_test)
 
+    # havel::X11IOBackend::Cleanup - the exit-cleanup ordering guard. Exit
+    # cleanup runs DisplayManager::Close() (XCloseDisplay) BEFORE
+    # IO::cleanup() reaches the backend, which still held the freed Display*
+    # and died in XSync <- _XReply (coredump 3006494, REPL exit). The guard
+    # skips all X protocol traffic once DisplayManager no longer owns a
+    # display. The test runs that post-close state with a deliberately bogus
+    # Display*: the pre-fix code faults, the guarded code is a no-op.
+    add_executable(io_x11_exit_cleanup_order_test
+        tests/io_x11_exit_cleanup_order_ut.cpp
+    )
+    target_include_directories(io_x11_exit_cleanup_order_test PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_SOURCE_DIR}/src/havel-lang
+        ${CMAKE_SOURCE_DIR}/src/include
+        ${CMAKE_SOURCE_DIR}/include
+    )
+    target_compile_features(io_x11_exit_cleanup_order_test PRIVATE cxx_std_23)
+    target_link_libraries(io_x11_exit_cleanup_order_test PRIVATE
+        GTest::gtest GTest::gtest_main
+        ${HAVEL_LINK_GROUP_BEGIN} havel_runtime havel_compiler havel_core ${HAVEL_LINK_GROUP_END}
+        ${HAVEL_LINK_GROUP_BEGIN}
+        ${COMMON_LIBS}
+        $<$<BOOL:${ENABLE_LLVM}>:${LLVM_LIBS}>
+        ${HAVEL_LINK_GROUP_END}
+    )
+    add_test(NAME io_x11_exit_cleanup_order_test COMMAND io_x11_exit_cleanup_order_test)
+
     # havel::ShouldRetrySelectInput - the rule that decides whether the X11
     # adapter re-requests the root window event subscription. The X server
     # refuses XSelectInput on the root window (BadAccess) while another

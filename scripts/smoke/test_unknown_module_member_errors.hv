@@ -1,0 +1,98 @@
+// Regression: an unknown member of a module namespace raises instead of
+// returning null (docs/known-issues/unknown-member-silently-null.md).
+//
+// What: `window.getPid()` (never a host function) used to return null. The
+//       failure surfaced later at the CONSUMER ("__proc.kill() requires a
+//       number PID") with no mention of the typo. Now the call site raises:
+//       "Unknown member 'getPid' on module namespace 'window'".
+//
+// The distinction this locks: a HOST-FUNCTION namespace receiver (the
+// generated registry enumerates its members: string.*, window.*, ...) errors
+// on a miss; a plain object keeps null-valued dynamic lookup (`{a:1}.b` is
+// null), and so does a local .hv module namespace (its members are closures,
+// not host-registered names - classifying those is out of scope for this
+// fix). The JIT bridge raises the same message so tier-1 parity holds.
+//
+// Expected: PASS. No OS input, no fs writes outside the scratch dir, no
+// processes besides this script's own error-path runs.
+
+use "fs"
+use "process"
+use "sys"
+use "string"
+
+failures = 0
+fn check(name, cond) {
+    if cond {
+        print("PASS " + name)
+    } else {
+        print("FAIL " + name)
+        failures = failures + 1
+    }
+}
+
+havel = sys.env("HAVEL_BINARY")
+if havel == null || havel == "" { havel = sys.cwd() + "/build-debug/havel" }
+if !fs.isFile(havel) {
+    print("SKIP unknown_module_member_errors: no havel binary beside HAVEL_BINARY")
+    process.exit(0)
+}
+
+tmp = "${sys.tmpdir()}/havel_unk_member_${sys.pid()}"
+fs.rmdir(tmp, true)
+fs.mkdirAll(tmp)
+
+// Fixture file names are explicit: process.run splits argv on spaces, so the
+// descriptive case name never becomes a path.
+fn expect_error(case_name, file_name, source) {
+    path = "${tmp}/${file_name}"
+    fs.write(path, source)
+    r = process.run(havel + " run " + path)
+    out = r.stdout + r.stderr
+    check("raise on " + case_name,
+          r.exitCode != 0 && out.includes("Unknown member") && out.includes("module namespace"))
+    if r.exitCode == 0 {
+        print(out)
+    }
+}
+
+// The original reporter's case: `window.getPid` is not a host function (the
+// documented API is window.pid).
+expect_error("unknown on the window namespace",
+             "unknown_window.hv",
+             "pid = window.getPid()\nprint(pid)\n")
+expect_error("unknown on a stdlib namespace (string)",
+             "unknown_string.hv",
+             "s = \"x\"\nb = string.noSuchMethod()\nprint(b)\n")
+
+// Scoping: local .hv module namespaces (closures, not host-registered names)
+// keep null-valued lookup; locked here so a future widening of the
+// classifier cannot happen silently.
+fs.write(tmp + "/myapi.hv", "fn ping() { return \"pong\" }\n")
+fs.write(tmp + "/localns.hv", "use myapi\nprint(\"L \" + myapi.missing())\n")
+r = process.run(havel + " run " + tmp + "/localns.hv")
+check("local module namespace miss stays null (documented scope)",
+      r.exitCode == 0 && r.stdout.includes("L null"))
+if r.exitCode != 0 {
+    print(r.stdout + r.stderr)
+}
+
+// Negative: plain-object dynamic lookup still returns null.
+fs.write(tmp + "/plainobject.hv", "o = {a: 1}\nif o.b == null { print(\"N plainok\") }\n")
+r = process.run(havel + " run " + tmp + "/plainobject.hv")
+check("plain-object missing member stays null", r.exitCode == 0 && r.stdout.includes("N plainok"))
+
+// Positive: known members still resolve through the namespaces.
+fs.write(tmp + "/positive.hv", "use { ping } from myapi\nprint(\"P \" + ping())\nprint(\"Q \" + string.upper(\"ab\"))\n")
+r = process.run(havel + " run " + tmp + "/positive.hv")
+check("known members still resolve",
+      r.exitCode == 0 && r.stdout.includes("P pong") && r.stdout.includes("Q AB"))
+
+fs.rmdir(tmp, true)
+
+if failures > 0 {
+    print("FAIL unknown_module_member_errors: " + failures + " check(s) failed")
+    process.exit(1)
+}
+print("PASS unknown_module_member_errors")
+process.exit(0)

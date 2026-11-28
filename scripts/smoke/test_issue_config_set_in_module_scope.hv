@@ -162,6 +162,6 @@ assert(readback.exitCode == 0,
 assert(readback.stdout.find("from-module") >= 0,
        "the value written from the module scope must be readable; output: ${readback.stdout}")
 
-fs.remove(FIXTURE_DIR)
+fs.delete(FIXTURE_DIR)
 print("PASS: cfg.set() from a module scope updates the live config object and does not crash")
 return 0

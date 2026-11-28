@@ -93,6 +93,6 @@ assert(res3.exitCode != 0, "wrong-arity extern must fail the load (got exit 0)")
 assert(res3.stdout.find("arity") >= 0,
        "the failure must mention the arity mismatch; output was: ${res3.stdout}")
 
-fs.remove(FIXTURE_DIR)
+fs.delete(FIXTURE_DIR)
 print("PASS: unregistered extern fails at load, by name; wrong arity fails; registered extern passes")
 return 0

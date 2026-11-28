@@ -311,10 +311,10 @@ check("remove refuses to drop the default", r.exitCode == 1 && r.stderr.includes
 
 // --- clean up
 r = process.run(env_prefix + " " + HPKG + " toolchain use " + head)
-fs.remove_all(STORE)
-fs.remove_all(EMPTY_STORE)
-fs.remove(FIXTURE)
-fs.remove(FAILFIX)
+fs.rmdir(STORE, true)
+fs.rmdir(EMPTY_STORE, true)
+fs.delete(FIXTURE)
+fs.delete(FAILFIX)
 
 if failures > 0 {
     print("FAIL toolchain_store: " + failures + " check(s) failed")

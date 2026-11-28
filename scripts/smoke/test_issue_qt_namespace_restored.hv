@@ -113,7 +113,7 @@ assert(res3.exitCode == 0, "invalid --ui value must fall back to auto and still 
 assert(res3.stdout.includes("ignoring 'bogus'"), "invalid --ui value must be warned about, got: ${res3.stdout}")
 
 // Clean up.
-fs.remove(FIXTURE_DIR)
+fs.delete(FIXTURE_DIR)
 
 print("OK qt-namespace")
 process.exit(0)

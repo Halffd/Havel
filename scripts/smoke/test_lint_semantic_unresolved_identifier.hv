@@ -93,7 +93,7 @@ assert(res2.exitCode == 0,
 assert(!fs.exists(SENTINEL),
        "--lint must NOT execute the fixture (sentinel created: ${SENTINEL})")
 
-fs.remove(FIXTURE_DIR)
+fs.delete(FIXTURE_DIR)
 
 print("PASS: --lint fails on an unresolved identifier and names it; valid scripts still pass")
 return 0

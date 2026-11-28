@@ -96,7 +96,7 @@ res2 = process.run("\"${havel_bin}\" --lint \"${BAD_FIXTURE}\" 2>&1")
 assert(res2.exitCode != 0, "--lint must FAIL on malformed dsl sugar (got exit 0)")
 
 // ------------------------------------------------------------------ cleanup
-fs.remove(FIXTURE_DIR)
+fs.delete(FIXTURE_DIR)
 
 print("PASS: dsl input sugar covered via --lint only; nothing executed")
 return 0

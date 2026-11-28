@@ -86,7 +86,7 @@ assert(res3.stdout.includes("Havel REPL"), "minimal REPL banner must appear desp
 assert(res3.stdout.includes("CHILD_SCRIPT_RAN"), "child script must run in minimal mode too")
 
 // Clean up.
-fs.remove(FIXTURE_DIR)
+fs.delete(FIXTURE_DIR)
 
 print("OK repl-script-mode")
 process.exit(0)

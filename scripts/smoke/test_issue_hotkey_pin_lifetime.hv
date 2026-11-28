@@ -171,7 +171,7 @@ check("no external roots are still pinned at VM shutdown",
       child.stdout.find("external roots still pinned") < 0,
       "the child logged a shutdown pin warning: " + child.stdout)
 
-fs.remove(FIXTURE_DIR)
+fs.delete(FIXTURE_DIR)
 
 if fails == 0 {
     print("ALL PASS")

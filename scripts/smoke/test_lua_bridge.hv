@@ -105,7 +105,7 @@ try {
 }
 check("post-release call throws, does not crash", released)
 
-fs.remove(path)
+fs.delete(path)
 
 // Lua errors surface as script-visible failures, not crashes.
 failed = false

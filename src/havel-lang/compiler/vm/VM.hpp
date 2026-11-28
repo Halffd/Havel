@@ -832,8 +832,7 @@ public:
       executed_instructions_ += tail;
       if (executed_instructions_ > max_instructions_) {
         throw std::runtime_error("VM instruction limit exceeded (" +
-                                 std::to_string(max_instructions_) +
-                                 ") - possible infinite loop");
+                                 std::to_string(max_instructions_) + ") - possible infinite loop");
       }
     }
   }
@@ -1983,8 +1982,7 @@ public:
         std::lock_guard<std::mutex> lk(tier2_queue_mutex_);
         remaining = tier2_queue_.size();
       }
-      uint32_t batch =
-          remaining > 32 ? 32 : static_cast<uint32_t>(remaining);
+      uint32_t batch = remaining > 32 ? 32 : static_cast<uint32_t>(remaining);
       drainPendingTier2Compiles(batch);
       if (tier2_compile_count_.load() == compiled_before)
         break; // no progress possible - the queue can never drain further
@@ -2099,16 +2097,14 @@ public:
   // to the slow path for complex opcodes), so separate counters would let
   // the total work reach twice the configured budget.
   void checkFastPathInstructionLimit(uint64_t dispatch_counter_now) {
-    const uint64_t delta =
-        dispatch_counter_now >= fast_path_limit_counter_
-            ? dispatch_counter_now - fast_path_limit_counter_
-            : dispatch_counter_now; // counter was reset since the last check
+    const uint64_t delta = dispatch_counter_now >= fast_path_limit_counter_
+                               ? dispatch_counter_now - fast_path_limit_counter_
+                               : dispatch_counter_now; // counter was reset since the last check
     fast_path_limit_counter_ = dispatch_counter_now;
     executed_instructions_ += delta;
     if (executed_instructions_ > max_instructions_) {
       throw std::runtime_error("VM instruction limit exceeded (" +
-                               std::to_string(max_instructions_) +
-                               ") - possible infinite loop");
+                               std::to_string(max_instructions_) + ") - possible infinite loop");
     }
   }
 
@@ -2344,7 +2340,47 @@ public:
   // alone no longer contains the namespace objects. The ambient "this"
   // self-binding never classifies (class-instance methods store the
   // receiver there — see havel_vm_call_method).
-  bool isNamespaceObjectGlobal(uint32_t obj_id) const {
+  // CALL_METHOD's unresolved arm needs to know whether the receiver is a
+  // module namespace ("window", "config", a user module). Markers do not
+  // answer it: namespace objects are built in several places (host bridges,
+  // lazy-module vivification, the .hv wrapper path) and most carry no
+  // marker. The signal that holds everywhere: the object is bound to a
+  // global name AND that name owns registered host functions ("window.*").
+  // A user global object ("cache = {}", "conf") owns none, so its unknown
+  // members stay ordinary null lookups; a namespace's member set is
+  // enumerable, so a miss is an authoring error.
+  std::string namespaceNameForObjectId(uint32_t obj_id) const {
+    auto is_ns_name = [&](const std::string &name) {
+      if (name == "this")
+        return false;
+      std::string prefix = name + ".";
+      for (const auto &fn : host_function_names_) {
+        if (fn.rfind(prefix, 0) == 0)
+          return true;
+      }
+      return false;
+    };
+    auto scan = [&](const std::unordered_map<std::string, Value> &m) -> std::string {
+      for (const auto &[name, val] : m) {
+        if (val.isObjectId() && val.asObjectId() == obj_id && is_ns_name(name))
+          return name;
+      }
+      return "";
+    };
+    if (auto hit = scan(globals); !hit.empty())
+      return hit;
+    if (baseModuleGlobals_) {
+      if (auto hit = scan(*baseModuleGlobals_); !hit.empty())
+        return hit;
+    }
+    for (auto frameIt = globals_stack_.rbegin(); frameIt != globals_stack_.rend(); ++frameIt) {
+      if (auto hit = scan(frameIt->first); !hit.empty())
+        return hit;
+    }
+    return "";
+  }
+
+bool isNamespaceObjectGlobal(uint32_t obj_id) const {
     for (const auto &g : globals) {
       if (g.first == "this")
         continue;

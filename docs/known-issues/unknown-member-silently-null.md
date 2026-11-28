@@ -2,8 +2,8 @@
 
 ## Status
 
-Open. Not fixed - changing the resolution semantics is a language-level
-decision that would affect every module namespace, not a narrow bug fix.
+FIXED (2026-11-28): unknown members of HOST-FUNCTION namespaces now raise
+at the call site. Scope and implementation below.
 
 ## Symptom
 
@@ -88,3 +88,36 @@ dispatch and a one-sided fix would diverge interpreted and tiered runs.
 
 - `docs/reference/host-functions.md` - the list of real window/process
   host functions.
+
+## Resolution (2026-11-28)
+
+Language decision: **error on the call site**, the strictest option. Scope
+is the enumerable set - receivers bound to a global whose name owns
+registered host functions (window.*, fs.*, config.*, string.*, ...). A
+plain object keeps null-valued lookup, and so does a local .hv module
+namespace (its members are closures, not host-registered names).
+
+Implementation, identical in both dispatch paths so interpreted and tiered
+runs agree:
+
+- VM::namespaceNameForObjectId (VM.hpp): classifies the receiver by
+  global binding plus a host-function-name prefix ("<name>.*"). Markers
+  (__module__/__lazy__) were tried first and abandoned: namespace objects
+  are built in several places (host bridges such as UIBridge, lazy-module
+  vivification, the .hv wrapper path) and most carry no marker.
+- VMControlFlow.cpp unresolved arm: namespace receiver -> throwError
+  "Unknown member 'getPid' on module namespace 'window' (no such host
+  function or module member)"; plain objects keep the pipe-stage/
+  null-valued path.
+- JitRuntimeBridges.cpp havel_vm_call_method: same classifier, same message.
+
+Fallout the strictness exposed (all silently-nulling before, all fixed):
+fs.remove and fs.remove_all never existed - the real API is fs.delete
+(files) and fs.rmdir(path, true) (recursive trees). Twelve cleanup call
+sites in scripts/smoke were deleting nothing and leaking fixtures; the
+known issue's "the null is the only signal, and it is a weak one" case
+study just paid out within one gate run.
+
+Regression: scripts/smoke/test_unknown_module_member_errors.hv (both
+namespaces raise, plain objects and local modules stay null, known
+members still resolve); mutation-verified by disabling the classifier.

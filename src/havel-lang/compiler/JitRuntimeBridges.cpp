@@ -1782,7 +1782,7 @@ uint64_t havel_vm_call_method(void *vm_ptr, uint64_t receiver_bits, uint32_t met
               receiver = loaded;
             }
           }
-        }
+      }
       }
     }
   }
@@ -2110,6 +2110,15 @@ uint64_t havel_vm_call_method(void *vm_ptr, uint64_t receiver_bits, uint32_t met
     Value methodValue = vm->getHostObjectField(ObjectRef{receiver.asObjectId(), true}, method_name);
     if (!methodValue.isNull()) {
       return dispatchField(methodValue, callArgs);
+    }
+    // Parity with the interpreter's unresolved arm (VMControlFlow.cpp): an
+    // unknown member of a module namespace is an authoring error, not a
+    // null lookup. Same error text so interpreted and tiered runs agree.
+    std::string ns = vm->namespaceNameForObjectId(receiver.asObjectId());
+    if (!ns.empty()) {
+      std::string msg = "Unknown member '" + method_name + "' on module namespace '" + ns +
+                        "' (no such host function or module member)";
+      havel_vm_throw_error(vm_ptr, msg.c_str());
     }
   }
 

@@ -109,7 +109,7 @@ fn monitor(pid) {
 fn demonitor(ref) {
     for pid, refs in _monitors {
         if refs[ref] != nil {
-            refs.remove(ref)
+            refs.delete(ref)
             if refs.is_empty() {
                 _monitors.remove(pid)
             }

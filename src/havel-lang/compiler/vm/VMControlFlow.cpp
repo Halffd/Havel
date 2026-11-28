@@ -566,7 +566,6 @@ bool VM::execControlFlowOp(const Instruction &instruction) {
             if (git != globals.end() && git->second.isObjectId()) {
               receiver = git->second;
               instanceObj = heap_.object(receiver.asObjectId());
-
             } else {
               std::string capModName = modName;
               capModName[0] = static_cast<char>(toupper(static_cast<unsigned char>(capModName[0])));
@@ -842,11 +841,25 @@ bool VM::execControlFlowOp(const Instruction &instruction) {
       if (isPipeCall && arg_count == 0) {
         auto defIt = globals.find(method_name);
         if (defIt != globals.end() && !defIt->second.isFunctionObjId() &&
-            !defIt->second.isClosureId() && !defIt->second.isHostFuncId() &&
-            receiver.isInt() && defIt->second.isInt()) {
+            !defIt->second.isClosureId() && !defIt->second.isHostFuncId() && receiver.isInt() &&
+            defIt->second.isInt()) {
           pushStack(Value(static_cast<int64_t>(receiver.asInt()) |
                           static_cast<int64_t>(defIt->second.asInt())));
           break;
+        }
+      }
+      // Module namespace receiver: the member set is enumerable, so a miss
+      // is an authoring error, not a lookup. The old silent null sent
+      // `window.getPid()` (never a host function) downstream as null and
+      // the failure surfaced at the CONSUMER ("__proc.kill() requires a
+      // number PID") with no mention of the typo. docs/known-issues/
+      // unknown-member-silently-null.md.
+      // Plain-object receivers (and pipe stages) keep null-valued lookup.
+      if (!isPipeCall && receiver.isObjectId()) {
+        std::string ns = namespaceNameForObjectId(receiver.asObjectId());
+        if (!ns.empty()) {
+          throwError("Unknown member '" + method_name + "' on module namespace '" + ns +
+                     "' (no such host function or module member)");
         }
       }
       pushStack(Value::makeNull());

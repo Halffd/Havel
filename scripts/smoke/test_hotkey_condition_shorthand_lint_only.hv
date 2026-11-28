@@ -124,7 +124,7 @@ res3 = process.run("\"${havel_bin}\" --lint \"${BAD_FIXTURE}\" 2>&1")
 assert(res3.exitCode != 0, "--lint must FAIL on malformed fixture (got exit 0)")
 
 // ----------------------------------------------------------------- cleanup
-fs.remove(FIXTURE_DIR)
+fs.delete(FIXTURE_DIR)
 
 print("PASS: bare-word hotkey condition shorthand parses; nothing executed")
 return 0

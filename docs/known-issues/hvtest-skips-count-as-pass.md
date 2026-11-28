@@ -1,6 +1,6 @@
 # hvtest counts a script that SKIPs (exit 0 without a PASS line) as passed
 
-**Status:** OPEN (behavior verified 2026-11-26; no change made yet)
+**Status:** FIXED (2026-11-28, commit b45a7edb - option 1 below landed).
 
 ## Symptom
 
@@ -59,3 +59,22 @@ Pick one:
 Until either lands, treat a green gate in a fresh environment as
 "everything that could run passed" - check the raw output for `SKIP`
 before trusting coverage claims.
+
+## Resolution (2026-11-28)
+
+Both hvtest verdict loops run `script_declared_skip()`: exit 0 plus a
+line-starting `SKIP` marker in the captured output prints
+`[SKIP] <name> (<reason>)` and lands in the real skipped bucket. First
+gate run after the fix immediately surfaced four previously-hidden skips
+in the chroot environment:
+
+    [SKIP] test_lua_bridge (SKIP: no liblua on this machine)
+    [SKIP] test_python_bridge (SKIP: no embeddable libpython on this machine)
+    [SKIP] test_python_property_side_effects (...)
+    [SKIP] test_python_release_race (...)
+    smoke: 397 passed, 0 failed, 4 skipped | 401 files
+
+The crash-based skip heuristic (SIGABRT/SIGSEGV -> "needs a display") is
+unchanged. Gate environments that want those four covered still need
+liblua/libpython installed - but now the absence is visible in the
+summary instead of hidden behind a green count.

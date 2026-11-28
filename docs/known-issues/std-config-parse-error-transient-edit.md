@@ -1,9 +1,10 @@
 # `Module std/config failed to parse: Unexpected token in expression: << / == / >>`
 
-**Status:** NOT REPRODUCIBLE on the current tree. The failing file was an
-uncommitted, in-flight working-tree edit; the committed module parses.
-A parse error of this shape means "the file on disk is malformed", not
-"the language lacks the operator" - see the evidence below.
+**Status:** NOT A DEFECT (closed 2026-11-28 as no-change). The failing file
+was an uncommitted, in-flight working-tree edit; the committed module
+parses, and no version in history contains the shift tokens. A parse error
+of this shape means "the file on disk is malformed", not "the language
+lacks the operator" - see the evidence below.
 
 ## Symptom (user's log, Nov 8 2026 02:22:33)
 

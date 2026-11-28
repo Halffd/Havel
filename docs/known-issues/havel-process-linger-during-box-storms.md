@@ -291,3 +291,16 @@ and a rewritten entry queues on the lock. Closing the serve-path defect
 removes the rewrite; it does not remove the cross-tree fingerprint fight
 over the four pipeline-fingerprint inputs.
 
+
+## In-repo mitigation landed (2026-11-28)
+
+This entry stays OPEN as a HOST ENVIRONMENT hazard: the mechanism is page-in
+stalls under storage congestion and no repository change can fix the host.
+But the damage path it used - the smoke runner reporting `(timeout)` for
+correct scripts when the machine was loaded - is closed on main: hvtest
+bounds each script with the VM's instruction budget (default 50M,
+`// smoke: max-instructions = N`), a work-based bound that a busy machine
+cannot trigger, and the per-test wall-clock timeout was removed from the
+suite. The remaining exposure is operational: do not run the gates while
+another session's builds saturate storage (see `build.sh limit` and
+`build.sh jobs` before starting a gate run).

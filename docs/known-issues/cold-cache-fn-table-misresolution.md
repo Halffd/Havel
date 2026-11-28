@@ -198,3 +198,20 @@ committed on both trees, gated, and its correctness test
   inconclusive.
 - Records: `~/texts/shared-coordination/2026-10-25-coldcache-verdict.md`
   and `~/texts/shared-coordination/2026-10-31-coldcache-reconfirm-b04a06659.md`.
+
+## Re-confirmation on current main (2026-11-28, current HEAD)
+
+Matrix re-run against the current tree (chroot dev binary, scratch
+XDG_CACHE_HOME, a local module `probe` with two exported functions plus
+the bundled math module artifact):
+
+| scenario | result |
+|---|---|
+| cold (no .hvc) | `a=42 l=ok` - correct |
+| warm (artifact from the cold run) | `a=42 l=ok` - correct |
+| artifact corrupted (12 bytes at offset 100) | `a=42 l=ok`; artifact rewritten by the run (rejected, module recompiled) |
+
+The four validation gates still hold on current main. The defect stays
+OPEN with its original requirement for closure: a sighting must capture
+the exact `.hvc` and the binary path BEFORE invalidation. Nothing in this
+run is that capture - it re-confirms the rejects, not the mechanism.

@@ -87,25 +87,13 @@ fn cpu() {
         cores: _cores, freq: _freq})
 }
 
-// Is this a /proc/stat per-core line ("cpu0 ...") rather than the aggregate
-// ("cpu  ...")?
-//
-// Takes the line as a PARAMETER on purpose. Calling `.find`/`.startsWith` on
-// a module-level variable (a for-loop's variable, an assigned local at module
-// scope) resolves the method against the wrong binding and dies with
-// "Attempted to call non-callable value of type string"; the same call with a
-// parameter works. See docs/known-issues/module-object-literal-with-call.md.
-fn _isCpuCoreLine(line) {
-    line.startsWith("cpu") && !line.startsWith("cpu ")
-}
-
 fn cpuPerCore() {
     _stat = fs.read("/proc/stat")
     _cores = []
     if _stat != null {
         _lines = _stat.split("\n")
         for _l in _lines {
-            if _isCpuCoreLine(_l) {
+            if _l.startsWith("cpu") && !_l.startsWith("cpu ") {
                 _nums = _parseCpuLine(_l)
                 if #_nums >= 4 {
                     _idle_t = _nums[3]

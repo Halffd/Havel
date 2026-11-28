@@ -1,7 +1,10 @@
 # A method call on a module-level variable fails; the same call on a parameter works
 
-**Status:** OPEN — root cause pinned with a minimal reproducer; worked
-around in-tree in `modules/app/monitor.hv`, not fixed.
+**Status:** FIXED (verified 2026-11-28, current main `fe7d6562` region). No
+dispatch defect remains on the current tree; the workaround in
+`modules/app/monitor.hv` has been reverted to the direct method form and a
+regression test (`scripts/smoke/test_module_scope_receiver_method.hv`)
+locks every receiver binding from the table below.
 
 Found while documenting `modules/app/monitor.hv`: `monitor.cpuPerCore()`
 returned an empty array on a 4-core machine, which sent me into the
@@ -81,3 +84,20 @@ reproducer above is the whole test: assert `viaAssign(["cpu0 1 2 3"])` ==
 viaParam's answer and that the for-loop variant returns the same, and both
 fail until dispatch is fixed. Until then, any module that calls a method on
 a module-level variable must pass it as a parameter.
+## Resolution (2026-11-28)
+
+Verified with the original reproducer against current main: all four
+receiver bindings return the correct `-1` - parameter, assigned local,
+for-loop variable, and module global - and `monitor.cpuPerCore()` reports
+4 cores on a 4-core machine. The merged parser/method-dispatch work from
+the other sessions closed the defect; it did not reproduce at
+investigation time.
+
+One trap for whoever reads this next, found while isolating the case: a
+module global whose name starts with `_` is private-by-convention and is
+NOT exported, so reading it from a consumer yields null. That looks like
+the old symptom (wrong value back from a module-scope receiver) but is
+language semantics - the reproducer must use exported names.
+
+The test mutates correctly: renaming the module global back to an
+underscore name makes the exported-read check fail.

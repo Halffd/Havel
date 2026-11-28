@@ -1,0 +1,115 @@
+// Regression: method calls on module-scope receivers dispatch to the
+// prototype method, not to an imported module function of the same name.
+//
+// The defect (docs/known-issues/module-level-receiver-method-call.md): a
+// receiver bound in module global scope resolved `.find` against the
+// module's globals. With `use string` in that module, the plain function
+// `find` from the string module won the dispatch - "Attempted to call
+// non-callable value of type string" in the assigned-local form and
+// silently 0 in the for-loop form (which is why monitor.cpuPerCore()
+// returned an empty array for an hour).
+//
+// Verified fixed 2026-11-28: the tree no longer reproduces it (the merged
+// parser/method-dispatch work from the other sessions closed it). This test
+// locks all four receiver bindings from the doc's table - parameter,
+// assigned local, for-loop variable, module global - and the real artifact
+// (monitor.cpuPerCore, whose workaround got reverted to the direct method
+// form).
+//
+// Housekeeping note for future readers: a MODULE GLOBAL named with a `_`
+// prefix reads as null from a consumer (private-by-convention, not
+// exported). That is language semantics, not this bug; fixtures below
+// therefore use exported (non-underscore) global names.
+
+use "fs"
+use "process"
+use "sys"
+use "string"
+
+failures = 0
+fn check(name, cond) {
+    if cond {
+        print("PASS " + name)
+    } else {
+        print("FAIL " + name)
+        failures = failures + 1
+    }
+}
+
+havel = sys.env("HAVEL_BINARY")
+if havel == null || havel == "" { havel = sys.cwd() + "/build-debug/havel" }
+if !fs.isFile(havel) {
+    print("SKIP module_scope_receiver_method: no havel binary beside HAVEL_BINARY")
+    process.exit(0)
+}
+
+tmp = "${sys.tmpdir()}/havel_mod_recv_${sys.pid()}"
+fs.rmdir(tmp, true)
+fs.mkdirAll(tmp)
+
+// The module: imports string (so a plain function `find` shares the name with
+// the prototype method), and binds receivers in module global scope in every
+// shape from the doc's table. Module scope is read back through EXPORTED
+// names - underscore globals are private by convention.
+fs.write(tmp + "/probe.hv", '''use string
+
+fn viaParam(s) { s.find("cpu ") }
+
+fn viaAssign(lines) { _l = lines[0]; _l.find("cpu ") }
+
+fn viaForLoop(lines) {
+    _out = []
+    for _l in lines {
+        _a = _l.find("cpu ")
+        _out.push(_a)
+    }
+    _out
+}
+
+_modline = "cpu0 19573 0 6615 0"
+modglobal = _modline.find("cpu ")
+''')
+
+// Every form must dispatch to the string prototype method and return -1
+// ("cpu " is not in "cpu0 19573 ...").
+fs.write(tmp + "/main.hv", '''use { viaParam, viaAssign, viaForLoop, modglobal } from probe
+
+_l = ["cpu0 19573 0 6615 0"]
+print("R param " + viaParam(_l[0]))
+print("R assign " + viaAssign(_l))
+print("R loop " + viaForLoop(_l)[0])
+print("R modglobal " + modglobal)
+''')
+
+// The real artifact: monitor.cpuPerCore() consumed the bug via /proc/stat
+// parsing and returned an empty array. It must report this machine's cores.
+fs.write(tmp + "/mon.hv", "use monitor\nprint(\"M cores \" + #monitor.cpuPerCore())\n")
+
+r = process.run(havel + " run " + tmp + "/main.hv")
+out = r.stdout + r.stderr
+
+check("consumer runs", r.exitCode == 0)
+check("parameter form dispatches to the prototype method", out.includes("R param -1"))
+check("assigned-local receiver dispatches to the prototype method", out.includes("R assign -1"))
+check("for-loop receiver dispatches to the prototype method", out.includes("R loop -1"))
+check("module-global receiver dispatches to the prototype method", out.includes("R modglobal -1"))
+check("no non-callable error", !out.includes("non-callable"))
+if r.exitCode != 0 {
+    print(out)
+}
+
+r = process.run(havel + " run " + tmp + "/mon.hv")
+cores_found = r.stdout.includes("M cores ") && !r.stdout.includes("M cores 0")
+check("monitor.cpuPerCore() returns the core count", cores_found && r.exitCode == 0)
+if !cores_found {
+    print(r.stdout + r.stderr)
+}
+
+fs.rmdir(tmp, true)
+
+if failures > 0 {
+    print("FAIL module_scope_receiver_method: " + failures + " check(s) failed")
+    process.exit(1)
+}
+print("PASS module_scope_receiver_method")
+process.exit(0)

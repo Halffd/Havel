@@ -1,10 +1,10 @@
 # Template file for 'havel'
 pkgname=havel
-version=0.3.9.20261125
+version=0.3.9.20261128
 revision=1
 # Pinned to the commit this template was verified against. Bump _commit,
 # version and checksum together (version = <next release>.<commit date>).
-_commit=b53eb5f2962e468a037df5a32a2e8d9647958f13
+_commit=b45a7edbb348f695dbed8ff6a5632a61d0338564
 # Void keeps LLVM under /usr/lib/llvm/<major>/ and does not put
 # LLVMConfig.cmake on CMake's default search path, so both the dependency
 # names and LLVM_DIR have to name the major version explicitly.
@@ -55,7 +55,7 @@ maintainer="Half <guhalfeld@hotmail.com>"
 license="MIT"
 homepage="https://github.com/Halffd/Havel"
 distfiles="https://github.com/Halffd/Havel/archive/${_commit}.tar.gz>${pkgname}-${_commit}.tar.gz"
-checksum=d592bc8e13d6edb3a49a61b8eba93bbe86c5a20b0e036fcedb71427ac6c4a98a
+checksum=f1d90f54661e268c31d095b835972ef90660a12d24a62338d24b8bc4dbe86234
 wrksrc="Havel-${_commit}"
 # The tree has no `make test` target with ENABLE_TESTS=OFF; the project's
 # own gate (hvtest --smoke --slow-too) is run out-of-tree because it needs

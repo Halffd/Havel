@@ -48,6 +48,7 @@ makedepends="clang${_llvmver} llvm${_llvmver}-devel lld${_llvmver}
  libxkbcommon-devel wayland-devel
  dbus-devel alsa-lib-devel pulseaudio-devel pipewire-devel
  pcre2-devel libffi-devel minizip-devel libcurl-devel readline-devel
+ lua54-devel python3-devel
  zlib-devel libpng-devel libjpeg-turbo-devel
  leptonica-devel tesseract-ocr-devel libopencv-devel"
 short_desc="Window manager and scripting language"

@@ -1,6 +1,7 @@
 # Void chroot dependency drift blocks the havel package build
 
-**Status:** PARTIALLY FIXED / BLOCKED FURTHER (observed 2026-11-25)
+**Status:** FIXED (2026-11-28): package builds and installs from the local
+repo. Summary of the blockers and resolutions below.
 
 ## Symptom
 
@@ -59,3 +60,34 @@ Anyone verifying "the Void package builds" in a snapshot chroot will hit
 a different one of these each time and may spend the same hour we did
 concluding the failures were havel's. They are not: check the failing
 package's template age against the remote before touching havel.
+
+## Resolution (2026-11-28)
+
+1. `libjxl` + `ffmpeg6`: local templates patched as above (OpenEXR off,
+   libbluray off); both built.
+2. `gst-plugins-base1`: theora ext disabled (`-Dtheora=disabled`, deps line
+   trimmed). Built clean - opencv uses the base interfaces, not the codec.
+3. `libopenexr`: the stale binpkgs files (lost to a tmpfs wipe during a
+   restart) were rebuilt from the local source template with
+   `./xbps-src pkg libopenexr`, restoring libopenexr-3.2.1_1 +
+   libopenexr-devel-3.2.1_1 for opencv's exact pin.
+4. `libopencv`: the remote-binary `libopencv-4.12.0_3` in the masterdir
+   required OpenEXR >= 3.5 and collided with the local template's
+   4.12.0_2/3.2.1 pair; removed (`xbps-remove -r masterdir havel
+   libopencv-devel libopencv`) so the local source template takes over.
+
+Also hit while working through this (unrelated to the drift, same
+session):
+
+- masterdir autodeps: xbps-src removes autodeps after a package build, so
+  the freshly-built opencv disappeared from the masterdir between the
+  package build and the next dev-tree build - reinstall from
+  hostdir/binpkgs when a dev configure loses a dep.
+- latent source bug found while fixing the fallout:
+  src/core/ocr/OCR.cpp included tesseract headers inside
+  `#ifdef HAVE_OPENCV` but used them under `#ifdef HAVE_TESSERACT`
+  (commit 1be4a44a).
+
+Final package: havel-0.3.9.20261128_1 from commit b45a7edb, 51 plugin
+.so, installed and verified in the chroot (`havel --version` stamps the
+commit; lua.sum / py scripts run through the installed binary).
